@@ -24,8 +24,8 @@ return [
         'http://localhost:5173',
         'http://127.0.0.1:3000',
         'http://127.0.0.1:5173',
-        'https://mit-others-tmp-registrar.trycloudflare.com',
-        'https://lady-amended-fields-council.trycloudflare.com',
+        'https://volume-formatting-finest-municipal.trycloudflare.com',
+        'https://advancement-nuclear-recommends-oliver.trycloudflare.com',
     ],
 
     'allowed_origins_patterns' => [

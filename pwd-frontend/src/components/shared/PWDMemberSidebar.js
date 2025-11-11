@@ -23,6 +23,7 @@ import Menu from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTranslation } from '../../contexts/TranslationContext';
 import { api } from '../../services/api';
 import { supportService } from '../../services/supportService';
 import toastService from '../../services/toastService';
@@ -31,16 +32,17 @@ function PWDMemberSidebar({ isOpen, onToggle }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { logout } = useAuth();
+  const { t } = useTranslation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const [mobileOpen, setMobileOpen] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
-
+  
   const menuItems = [
-    { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', badgeCount: 0 },
-    { text: 'My Documents', icon: <DescriptionIcon />, path: '/pwd-documents', badgeCount: 0 },
-    { text: 'Support Desk', icon: <SupportAgentIcon />, path: '/pwd-support', badgeCount: unreadNotifications },
-    { text: 'Profile', icon: <PersonIcon />, path: '/pwd-profile', badgeCount: 0 },
+    { text: t('common.dashboard'), icon: <DashboardIcon />, path: '/dashboard', badgeCount: 0 },
+    { text: t('common.documents'), icon: <DescriptionIcon />, path: '/pwd-documents', badgeCount: 0 },
+    { text: t('support.title'), icon: <SupportAgentIcon />, path: '/pwd-support', badgeCount: unreadNotifications },
+    { text: t('common.profile'), icon: <PersonIcon />, path: '/pwd-profile', badgeCount: 0 },
   ];
 
   const handleLogout = async () => {

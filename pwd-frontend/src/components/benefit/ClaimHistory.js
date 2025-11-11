@@ -31,6 +31,7 @@ import {
 import benefitService from '../../services/benefitService';
 import pwdMemberService from '../../services/pwdMemberService';
 import api from '../../services/api';
+import { API_CONFIG } from '../../config/production';
 import AdminSidebar from '../shared/AdminSidebar';
 import Staff2Sidebar from '../shared/Staff2Sidebar';
 import { useAuth } from '../../contexts/AuthContext';
@@ -48,6 +49,7 @@ const ClaimHistory = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [authorizationLetterOpen, setAuthorizationLetterOpen] = useState(false);
   const [selectedAuthorizationLetter, setSelectedAuthorizationLetter] = useState(null);
+  const [authorizationLetterError, setAuthorizationLetterError] = useState(false);
   const [recentClaims, setRecentClaims] = useState([]);
   const [loadingRecentClaims, setLoadingRecentClaims] = useState(false);
 
@@ -356,6 +358,7 @@ const ClaimHistory = () => {
         return {
           ...member,
           claim: claim || null,
+          claimId: claim?.id || null, // Store claim ID for authorization letter API route
           claimed: !!claim && (claim.status === 'Claimed' || claim.status === 'claimed'),
           claimantType: claim?.claimantType || null,
           claimantName: claim?.claimantName || null,
@@ -374,14 +377,44 @@ const ClaimHistory = () => {
     }
   };
 
-  const handleViewAuthorizationLetter = (imageUrl) => {
-    setSelectedAuthorizationLetter(imageUrl);
-    setAuthorizationLetterOpen(true);
+  const handleViewAuthorizationLetter = (claimId) => {
+    // Use the API route for authorization letters
+    if (!claimId) {
+      toastService.error('Authorization letter not found');
+      return;
+    }
+    
+    // Build the API URL for the authorization letter
+    try {
+      const apiBaseUrl = API_CONFIG?.API_BASE_URL || 'https://volume-formatting-finest-municipal.trycloudflare.com/api';
+      let url = `${apiBaseUrl}/authorization-letter/${claimId}`;
+      
+      // Add authentication token if available
+      const token = localStorage.getItem('auth.token');
+      if (token) {
+        try {
+          const tokenData = JSON.parse(token);
+          const tokenValue = typeof tokenData === 'string' ? tokenData : tokenData.token;
+          if (tokenValue) {
+            url += `?token=${tokenValue}`;
+          }
+        } catch (error) {
+          console.warn('Error parsing auth token:', error);
+        }
+      }
+      
+      setSelectedAuthorizationLetter(url);
+      setAuthorizationLetterOpen(true);
+    } catch (error) {
+      console.error('Error constructing authorization letter URL:', error);
+      toastService.error('Failed to load authorization letter');
+    }
   };
 
   const handleCloseAuthorizationLetter = () => {
     setAuthorizationLetterOpen(false);
     setSelectedAuthorizationLetter(null);
+    setAuthorizationLetterError(false);
   };
 
   const renderSidebar = () => {
@@ -636,12 +669,12 @@ const ClaimHistory = () => {
                             )}
                           </TableCell>
                           <TableCell>
-                            {beneficiary.claimantType === 'Others' && beneficiary.authorizationLetter ? (
+                            {beneficiary.claimantType === 'Others' && beneficiary.authorizationLetter && beneficiary.claimId ? (
                               <Button
                                 size="small"
                                 variant="outlined"
                                 startIcon={<VisibilityIcon />}
-                                onClick={() => handleViewAuthorizationLetter(beneficiary.authorizationLetter)}
+                                onClick={() => handleViewAuthorizationLetter(beneficiary.claimId)}
                               >
                                 View Letter
                               </Button>
@@ -669,7 +702,7 @@ const ClaimHistory = () => {
           fullWidth
         >
           <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6">Authorization Letter</Typography>
+            Authorization Letter
             <IconButton onClick={handleCloseAuthorizationLetter}>
               <CloseIcon />
             </IconButton>
@@ -677,15 +710,41 @@ const ClaimHistory = () => {
           <DialogContent>
             {selectedAuthorizationLetter && (
               <Box sx={{ textAlign: 'center' }}>
-                <img
-                  src={selectedAuthorizationLetter}
-                  alt="Authorization Letter"
-                  style={{
-                    maxWidth: '100%',
-                    height: 'auto',
-                    borderRadius: '4px'
-                  }}
-                />
+                {authorizationLetterError ? (
+                  <Box sx={{ py: 4 }}>
+                    <Alert severity="error" sx={{ mb: 2 }}>
+                      Failed to load authorization letter. The file may not exist or may have been deleted.
+                    </Alert>
+                    <Typography variant="body2" color="text.secondary">
+                      File path: {selectedAuthorizationLetter}
+                    </Typography>
+                  </Box>
+                ) : (
+                  <img
+                    src={selectedAuthorizationLetter}
+                    alt="Authorization Letter"
+                    style={{
+                      maxWidth: '100%',
+                      height: 'auto',
+                      borderRadius: '4px'
+                    }}
+                    onError={(e) => {
+                      console.error('Error loading authorization letter:', selectedAuthorizationLetter);
+                      setAuthorizationLetterError(true);
+                      e.target.style.display = 'none';
+                    }}
+                    onLoad={() => {
+                      setAuthorizationLetterError(false);
+                    }}
+                  />
+                )}
+              </Box>
+            )}
+            {!selectedAuthorizationLetter && (
+              <Box sx={{ py: 4, textAlign: 'center' }}>
+                <Alert severity="warning">
+                  No authorization letter available.
+                </Alert>
               </Box>
             )}
           </DialogContent>

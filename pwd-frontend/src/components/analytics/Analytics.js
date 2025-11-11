@@ -26,9 +26,8 @@ import {
   Tab,
   Tabs
 } from '@mui/material';
-import jsPDF from 'jspdf';
-// Import autoTable plugin - it extends jsPDF prototype
-import 'jspdf-autotable';
+// jsPDF and jspdf-autotable are dynamically imported in generatePDFReport
+// to ensure they load correctly and avoid module loading issues
 import {
   Refresh as RefreshIcon,
   Fullscreen as FullscreenIcon,
@@ -1191,46 +1190,31 @@ END OF REPORT
     
     setGeneratingPDF(true);
     try {
-      // Use the statically imported jsPDF - jspdf-autotable should have extended it
-      // If autoTable is not available, dynamically import the plugin
-      if (typeof jsPDF.prototype.autoTable !== 'function') {
-        // Force import the plugin
-        await import('jspdf-autotable');
-      }
+      // Dynamically import jsPDF and autoTable to ensure they load correctly
+      const { jsPDF } = await import('jspdf');
+      const { autoTable } = await import('jspdf-autotable');
       
+      // Create jsPDF instance
       const doc = new jsPDF('portrait', 'mm', 'a4');
       
-      // Verify autoTable is available
-      if (typeof doc.autoTable !== 'function') {
-        // Try manual attach as fallback
-        try {
-          const autoTableModule = await import('jspdf-autotable');
-          // The plugin should extend prototype, but if not, try to attach manually
-          if (autoTableModule.default && typeof autoTableModule.default === 'function') {
-            // Call it once to attach to prototype
-            const testDoc = new jsPDF();
-            autoTableModule.default(testDoc, { head: [['test']], body: [['test']] });
-            if (typeof testDoc.autoTable === 'function') {
-              // Success - now use it
-              doc.autoTable = testDoc.autoTable.bind(doc);
-            }
-          }
-        } catch (e) {
-          console.error('Failed to load jspdf-autotable:', e);
-        }
-        
-        if (typeof doc.autoTable !== 'function') {
-          throw new Error('jspdf-autotable plugin failed to load. Please refresh the page and try again.');
-        }
-      }
-      
+      // The autoTable plugin should extend jsPDF prototype, but if it doesn't,
+      // we can use it as a function directly
       // Create wrapper function for consistent usage
       const autoTableFn = (options) => {
-        doc.autoTable(options);
-        return doc.lastAutoTable;
+        if (typeof doc.autoTable === 'function') {
+          // Use as method if available (plugin extended prototype)
+          doc.autoTable(options);
+          return doc.lastAutoTable;
+        } else {
+          // Use as function if method not available (fallback)
+          autoTable(doc, options);
+          return doc.lastAutoTable;
+        }
       };
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
+      // Calculate available width for tables (page width - left margin - right margin)
+      const availableWidth = pageWidth - 40; // 20mm left + 20mm right margin
       let yPosition = 20;
       
       // Header with background
@@ -1258,7 +1242,7 @@ END OF REPORT
       if (selectedAnalytics.executiveSummary) {
         doc.setFontSize(18);
         doc.setFont('helvetica', 'bold');
-        doc.text('EXECUTIVE SUMMARY', 20, yPosition);
+        doc.text('EXECUTIVE SUMMARY', pageWidth / 2, yPosition, { align: 'center' });
         
         doc.setDrawColor(52, 152, 219);
         doc.setLineWidth(0.5);
@@ -1288,12 +1272,13 @@ END OF REPORT
           body: summaryData.slice(1),
           theme: 'striped',
           headStyles: { fillColor: [52, 152, 219], textColor: [255, 255, 255], fontStyle: 'bold' },
-          styles: { fontSize: 10, cellPadding: 3 },
+          styles: { fontSize: 10, cellPadding: 3, overflow: 'linebreak', halign: 'center' },
           columnStyles: { 
-            0: { cellWidth: 70, fontStyle: 'bold' },
-            1: { cellWidth: 60, halign: 'right' }
+            0: { cellWidth: availableWidth * 0.6, fontStyle: 'bold', halign: 'center' },
+            1: { cellWidth: availableWidth * 0.4, halign: 'center' }
           },
-          margin: { left: 20, right: 20 }
+          margin: { left: 20, right: 20 },
+          tableWidth: availableWidth
         });
         
         yPosition = doc.lastAutoTable ? doc.lastAutoTable.finalY + 15 : yPosition + 50;
@@ -1308,7 +1293,7 @@ END OF REPORT
         
         doc.setFontSize(18);
         doc.setFont('helvetica', 'bold');
-        doc.text('KEY INSIGHTS', 20, yPosition);
+        doc.text('KEY INSIGHTS', pageWidth / 2, yPosition, { align: 'center' });
         doc.line(20, yPosition + 2, pageWidth - 20, yPosition + 2);
         
         yPosition += 12;
@@ -1323,10 +1308,7 @@ END OF REPORT
         ];
         
         insights.forEach((insight, idx) => {
-          doc.setFont('helvetica', 'bold');
-          doc.text('•', 25, yPosition);
-          doc.setFont('helvetica', 'normal');
-          doc.text(insight, 30, yPosition);
+          doc.text(insight, pageWidth / 2, yPosition, { align: 'center' });
           yPosition += 8;
         });
         
@@ -1342,7 +1324,7 @@ END OF REPORT
         
         doc.setFontSize(18);
         doc.setFont('helvetica', 'bold');
-        doc.text('MONTHLY REGISTRATIONS BREAKDOWN', 20, yPosition);
+        doc.text('MONTHLY REGISTRATIONS BREAKDOWN', pageWidth / 2, yPosition, { align: 'center' });
         doc.line(20, yPosition + 2, pageWidth - 20, yPosition + 2);
         
         yPosition += 12;
@@ -1358,12 +1340,13 @@ END OF REPORT
           body: monthlyData.slice(1),
           theme: 'striped',
           headStyles: { fillColor: [52, 152, 219], textColor: [255, 255, 255], fontStyle: 'bold' },
-          styles: { fontSize: 10, cellPadding: 3 },
+          styles: { fontSize: 10, cellPadding: 3, overflow: 'linebreak', halign: 'center' },
           columnStyles: { 
-            0: { cellWidth: 80 },
-            1: { cellWidth: 50, halign: 'right' }
+            0: { cellWidth: availableWidth * 0.6, halign: 'center' },
+            1: { cellWidth: availableWidth * 0.4, halign: 'center' }
           },
-          margin: { left: 20, right: 20 }
+          margin: { left: 20, right: 20 },
+          tableWidth: availableWidth
         });
         
         yPosition = doc.lastAutoTable ? doc.lastAutoTable.finalY + 15 : yPosition + 50;
@@ -1378,7 +1361,7 @@ END OF REPORT
         
         doc.setFontSize(18);
         doc.setFont('helvetica', 'bold');
-        doc.text('TOP 10 BARANGAYS BY REGISTRATIONS', 20, yPosition);
+        doc.text('TOP 10 BARANGAYS BY REGISTRATIONS', pageWidth / 2, yPosition, { align: 'center' });
         doc.line(20, yPosition + 2, pageWidth - 20, yPosition + 2);
         
         yPosition += 12;
@@ -1398,13 +1381,14 @@ END OF REPORT
           body: barangayData.slice(1),
           theme: 'striped',
           headStyles: { fillColor: [52, 152, 219], textColor: [255, 255, 255], fontStyle: 'bold' },
-          styles: { fontSize: 10, cellPadding: 3 },
+          styles: { fontSize: 10, cellPadding: 3, overflow: 'linebreak', halign: 'center' },
           columnStyles: { 
-            0: { cellWidth: 20, halign: 'center' },
-            1: { cellWidth: 120 },
-            2: { cellWidth: 50, halign: 'right' }
+            0: { cellWidth: availableWidth * 0.15, halign: 'center' },
+            1: { cellWidth: availableWidth * 0.6, halign: 'center' },
+            2: { cellWidth: availableWidth * 0.25, halign: 'center' }
           },
-          margin: { left: 20, right: 20 }
+          margin: { left: 20, right: 20 },
+          tableWidth: availableWidth
         });
         
         yPosition = doc.lastAutoTable ? doc.lastAutoTable.finalY + 15 : yPosition + 50;
@@ -1419,7 +1403,7 @@ END OF REPORT
         
         doc.setFontSize(18);
         doc.setFont('helvetica', 'bold');
-        doc.text('DISABILITY TYPE DISTRIBUTION', 20, yPosition);
+        doc.text('DISABILITY TYPE DISTRIBUTION', pageWidth / 2, yPosition, { align: 'center' });
         doc.line(20, yPosition + 2, pageWidth - 20, yPosition + 2);
         
         yPosition += 12;
@@ -1435,12 +1419,13 @@ END OF REPORT
           body: disabilityData.slice(1),
           theme: 'striped',
           headStyles: { fillColor: [52, 152, 219], textColor: [255, 255, 255], fontStyle: 'bold' },
-          styles: { fontSize: 10, cellPadding: 3 },
+          styles: { fontSize: 10, cellPadding: 3, overflow: 'linebreak', halign: 'center' },
           columnStyles: { 
-            0: { cellWidth: 120 },
-            1: { cellWidth: 70, halign: 'right' }
+            0: { cellWidth: availableWidth * 0.65, halign: 'center' },
+            1: { cellWidth: availableWidth * 0.35, halign: 'center' }
           },
-          margin: { left: 20, right: 20 }
+          margin: { left: 20, right: 20 },
+          tableWidth: availableWidth
         });
         
         yPosition = doc.lastAutoTable ? doc.lastAutoTable.finalY + 15 : yPosition + 50;
@@ -1455,7 +1440,7 @@ END OF REPORT
         
         doc.setFontSize(18);
         doc.setFont('helvetica', 'bold');
-        doc.text('BENEFIT TYPE DISTRIBUTION', 20, yPosition);
+        doc.text('BENEFIT TYPE DISTRIBUTION', pageWidth / 2, yPosition, { align: 'center' });
         doc.line(20, yPosition + 2, pageWidth - 20, yPosition + 2);
         
         yPosition += 12;
@@ -1471,12 +1456,13 @@ END OF REPORT
           body: benefitData.slice(1),
           theme: 'striped',
           headStyles: { fillColor: [52, 152, 219], textColor: [255, 255, 255], fontStyle: 'bold' },
-          styles: { fontSize: 10, cellPadding: 3 },
+          styles: { fontSize: 10, cellPadding: 3, overflow: 'linebreak', halign: 'center' },
           columnStyles: { 
-            0: { cellWidth: 120 },
-            1: { cellWidth: 70, halign: 'right' }
+            0: { cellWidth: availableWidth * 0.65, halign: 'center' },
+            1: { cellWidth: availableWidth * 0.35, halign: 'center' }
           },
-          margin: { left: 20, right: 20 }
+          margin: { left: 20, right: 20 },
+          tableWidth: availableWidth
         });
         
         yPosition = doc.lastAutoTable ? doc.lastAutoTable.finalY + 15 : yPosition + 50;
@@ -1491,7 +1477,7 @@ END OF REPORT
         
         doc.setFontSize(18);
         doc.setFont('helvetica', 'bold');
-        doc.text('TICKET STATUS BREAKDOWN', 20, yPosition);
+        doc.text('TICKET STATUS BREAKDOWN', pageWidth / 2, yPosition, { align: 'center' });
         doc.line(20, yPosition + 2, pageWidth - 20, yPosition + 2);
         
         yPosition += 12;
@@ -1510,12 +1496,13 @@ END OF REPORT
           body: ticketData.slice(1),
           theme: 'striped',
           headStyles: { fillColor: [52, 152, 219], textColor: [255, 255, 255], fontStyle: 'bold' },
-          styles: { fontSize: 10, cellPadding: 3 },
+          styles: { fontSize: 10, cellPadding: 3, overflow: 'linebreak', halign: 'center' },
           columnStyles: { 
-            0: { cellWidth: 120 },
-            1: { cellWidth: 70, halign: 'right' }
+            0: { cellWidth: availableWidth * 0.65, halign: 'center' },
+            1: { cellWidth: availableWidth * 0.35, halign: 'center' }
           },
-          margin: { left: 20, right: 20 }
+          margin: { left: 20, right: 20 },
+          tableWidth: availableWidth
         });
       }
       

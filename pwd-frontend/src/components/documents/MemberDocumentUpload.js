@@ -46,6 +46,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTranslation } from '../../contexts/TranslationContext';
 import { useScreenReader } from '../../hooks/useScreenReader';
 import { documentService } from '../../services/documentService';
+import { filePreviewService } from '../../services/filePreviewService';
 import CloseIcon from '@mui/icons-material/Close';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import { 
@@ -57,8 +58,8 @@ import {
   buttonStyles
 } from '../../utils/themeStyles';
 
-// Maximum file size: 2MB
-const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB in bytes
+// Maximum file size: 15MB
+const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB in bytes
 
 function MemberDocumentUpload() {
   const { currentUser } = useAuth();
@@ -72,7 +73,12 @@ function MemberDocumentUpload() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
-  // Preview modal state
+  // Preview modal state (A4-style modal like PWDRecords)
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState('');
+  const [previewFileName, setPreviewFileName] = useState('');
+  
+  // Legacy preview state (keeping for backward compatibility)
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewName, setPreviewName] = useState('');
@@ -153,33 +159,69 @@ function MemberDocumentUpload() {
 
       let initial;
       if (memberResp && memberResp.success) {
-        initial = mergeActiveTypes(memberResp.documents || [], activeTypes);
+        // Log the response for debugging
+        console.log('Member documents API response:', {
+          success: memberResp.success,
+          documents_count: memberResp.documents?.length || 0,
+          documents: memberResp.documents?.map(doc => ({
+            name: doc.name,
+            memberDocuments_count: doc.memberDocuments?.length || doc.member_documents?.length || 0,
+            memberDocuments: doc.memberDocuments || doc.member_documents
+          }))
+        });
+        
+        // Normalize memberDocuments (camelCase from backend) to member_documents (snake_case for frontend)
+        const normalizedDocs = (memberResp.documents || []).map(doc => ({
+          ...doc,
+          member_documents: (doc.memberDocuments || doc.member_documents || []).map(md => ({
+            ...md,
+            id: md.id || null, // Ensure ID is present for migrated documents
+            file_path: md.file_path || md.filePath || null
+          }))
+        }));
+        
+        console.log('Normalized documents:', normalizedDocs.map(doc => ({
+          name: doc.name,
+          member_documents_count: doc.member_documents?.length || 0,
+          member_documents: doc.member_documents
+        })));
+        
+        initial = mergeActiveTypes(normalizedDocs, activeTypes);
       } else {
         // Fallback: show all active types even if member endpoint fails
         initial = (activeTypes || []).map(t => ({ ...t, member_documents: [] }));
       }
 
-      // Apply cached reflections for instant thumbnails on reload
-      const cached = loadReflectionCache();
-      if (cached && Object.keys(cached).length > 0) {
-        initial = initial.map(doc => {
-          if (!doc.member_documents || doc.member_documents.length === 0) {
-            const cachedPath = cached[doc.name];
-            if (cachedPath) {
-              return {
-                ...doc,
-                member_documents: [{
-                  id: null,
-                  status: 'pending',
-                  uploaded_at: cached.__uploaded_at || null,
-                  notes: 'Reflected from your application upload (cached)',
-                  filePath: cachedPath
-                }]
-              };
+      // Only apply cached reflections if user is NOT a PWD member (still an applicant)
+      // PWD members should have migrated documents with IDs from the backend
+      const isPWDMember = currentUser?.role === 'PWDMember';
+      if (!isPWDMember) {
+        // Only apply cached reflections if there are NO real member_documents (with IDs)
+        // This should only happen for applicants who haven't been approved yet
+        // After approval, documents should be migrated and have real member_documents with IDs
+        const cached = loadReflectionCache();
+        if (cached && Object.keys(cached).length > 0) {
+          initial = initial.map(doc => {
+            // Only use reflection if there are NO real member_documents (no ID means it's a fake entry)
+            const hasRealMemberDoc = doc.member_documents && doc.member_documents.some(md => md.id !== null && md.id !== undefined);
+            if (!hasRealMemberDoc && (!doc.member_documents || doc.member_documents.length === 0)) {
+              const cachedPath = cached[doc.name];
+              if (cachedPath) {
+                return {
+                  ...doc,
+                  member_documents: [{
+                    id: null,
+                    status: 'pending',
+                    uploaded_at: cached.__uploaded_at || null,
+                    notes: 'Reflected from your application upload (cached)',
+                    filePath: cachedPath
+                  }]
+                };
+              }
             }
-          }
-          return doc;
-        });
+            return doc;
+          });
+        }
       }
       setDocuments(initial);
     } catch (error) {
@@ -212,7 +254,18 @@ function MemberDocumentUpload() {
 
       // After loading member documents, attempt to reflect any files from the
       // most recent application submission as a fallback baseline
+      // BUT ONLY if the user is still an applicant (not yet approved/migrated)
       try {
+        // Skip reflection if user is already a PWD member (documents should be migrated)
+        const isPWDMember = currentUser?.role === 'PWDMember';
+        if (isPWDMember) {
+          // User is already a member, so documents should be migrated
+          // Don't run reflection - rely on migrated documents from backend
+          setReflecting(false);
+          setLoading(false);
+          return;
+        }
+        
         setReflecting(true);
         const allApplications = await api.get('/applications');
         const id = currentUser?.id;
@@ -240,9 +293,14 @@ function MemberDocumentUpload() {
             setDocuments(prevDocs => prevDocs.map(doc => {
               const fieldName = documentService.getFieldNameFromDocumentName(doc.name);
               const fieldValue = latestApp ? latestApp[fieldName] : null;
-              const hasMemberDoc = doc.member_documents && doc.member_documents.length > 0;
+              // Check if there's a REAL member_document (with an ID) - don't override migrated documents
+              const hasRealMemberDoc = doc.member_documents && doc.member_documents.some(md => md.id !== null && md.id !== undefined);
+              const hasAnyMemberDoc = doc.member_documents && doc.member_documents.length > 0;
 
-              if (!hasMemberDoc && fieldValue) {
+              // Only create reflection if there's NO real member_document
+              // This should only happen for applicants who haven't been approved yet
+              // After approval, documents are migrated and have real member_documents with IDs
+              if (!hasRealMemberDoc && !hasAnyMemberDoc && fieldValue) {
                 // Normalize to a single file path string
                 let filePath = null;
                 if (Array.isArray(fieldValue)) {
@@ -259,6 +317,7 @@ function MemberDocumentUpload() {
                 if (filePath) {
                   reflectionMap[doc.name] = filePath;
                   // Attach a pseudo member_document with filePath so it can be viewed
+                  // This is only for applicants who haven't been approved yet
                   return {
                     ...doc,
                     member_documents: [
@@ -312,10 +371,10 @@ function MemberDocumentUpload() {
       return;
     }
 
-    // Validate file size (2MB limit)
+    // Validate file size (15MB limit)
     if (file.size > MAX_FILE_SIZE) {
       const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
-      setError(`File size (${fileSizeMB}MB) exceeds the maximum limit of 2MB. Please select a smaller file.`);
+      setError(`File size (${fileSizeMB}MB) exceeds the maximum limit of 15MB. Please select a smaller file.`);
       setSelectedFile(null);
       return;
     }
@@ -330,7 +389,7 @@ function MemberDocumentUpload() {
     // Validate file size before upload
     if (selectedFile.size > MAX_FILE_SIZE) {
       const fileSizeMB = (selectedFile.size / (1024 * 1024)).toFixed(2);
-      setError(`File size (${fileSizeMB}MB) exceeds the maximum limit of 2MB. Please select a smaller file.`);
+      setError(`File size (${fileSizeMB}MB) exceeds the maximum limit of 15MB. Please select a smaller file.`);
       return;
     }
 
@@ -391,10 +450,14 @@ function MemberDocumentUpload() {
   const getDocumentStatus = (document) => {
     const memberDoc = document.member_documents?.[0];
     if (!memberDoc) {
-      return { status: 'missing', color: 'error', icon: <WarningIcon /> };
+      return { status: t('documents.missing'), color: 'error', icon: <WarningIcon /> };
     }
+    const statusKey = memberDoc.status === 'approved' ? 'documents.approved' :
+                     memberDoc.status === 'rejected' ? 'documents.rejected' :
+                     memberDoc.status === 'pending' ? 'common.pending' :
+                     memberDoc.status;
     return {
-      status: memberDoc.status,
+      status: typeof statusKey === 'string' && statusKey.includes('.') ? t(statusKey) : statusKey,
       color: getStatusColor(memberDoc.status),
       icon: getStatusIcon(memberDoc.status)
     };
@@ -414,8 +477,14 @@ function MemberDocumentUpload() {
     if (/^https?:\/\//i.test(path)) return path; // already absolute
     // Remove any leading '/'
     let normalized = path.startsWith('/') ? path.substring(1) : path;
-    // If the string doesn't contain a folder, assume applications/
-    if (!normalized.includes('/')) normalized = `applications/${normalized}`;
+    // Don't assume applications/ - use the path as-is if it already contains a folder
+    // Only add applications/ if it's a bare filename (no path separators)
+    if (!normalized.includes('/')) {
+      // This is likely an old application file, but we should avoid this fallback
+      // Prefer using the API endpoint for member documents
+      console.warn('Using fallback applications/ path for:', normalized);
+      normalized = `applications/${normalized}`;
+    }
     // Encode each segment to handle spaces/special chars
     const encoded = normalized.split('/').map(seg => encodeURIComponent(seg)).join('/');
     return api.getStorageUrl(encoded);
@@ -423,17 +492,101 @@ function MemberDocumentUpload() {
 
   const buildFileUrl = (memberDoc) => {
     if (!memberDoc) return null;
-    if (memberDoc.id) return api.getFilePreviewUrl('document-file', memberDoc.id);
-    if (memberDoc.filePath) return buildStorageUrl(memberDoc.filePath);
-    return null;
+    
+    // Get base URL
+    let url = null;
+    // ALWAYS prefer using the API endpoint if there's an ID (migrated documents)
+    if (memberDoc.id) {
+      url = api.getFilePreviewUrl('document-file', memberDoc.id);
+    } else if (memberDoc.file_path || memberDoc.filePath) {
+      // For documents without ID (reflection from application), use storage URL
+      // But check if it's a migrated path (member-documents/) vs old application path
+      const filePath = memberDoc.file_path || memberDoc.filePath;
+      
+      // If user is a PWD member, they should have migrated documents with IDs
+      // If we're here with no ID, it might be a reflection that shouldn't exist
+      // Try to use the application-file endpoint as a fallback for old application paths
+      if (filePath.includes('member-documents/')) {
+        // This is a migrated document path, use storage URL directly
+        url = buildStorageUrl(filePath);
+      } else if (filePath.includes('uploads/applications/')) {
+        // Old application path - try to extract application ID and use application-file endpoint
+        // This is a fallback for reflected documents that shouldn't really be shown to members
+        console.warn('Attempting to load old application file for member:', filePath);
+        // For now, use storage URL but this should ideally not happen for members
+        url = buildStorageUrl(filePath);
+      } else {
+        // Unknown path format
+        url = buildStorageUrl(filePath);
+      }
+    } else {
+      return null;
+    }
+    
+    // Add authentication token if available
+    const token = localStorage.getItem('auth.token');
+    if (token && url) {
+      try {
+        const tokenData = JSON.parse(token);
+        const tokenValue = typeof tokenData === 'string' ? tokenData : tokenData.token;
+        if (tokenValue) {
+          const separator = url.includes('?') ? '&' : '?';
+          url = `${url}${separator}token=${tokenValue}`;
+        }
+      } catch (error) {
+        console.warn('Error parsing auth token for file URL:', error);
+      }
+    }
+    
+    return url;
+  };
+
+  const handlePreviewImage = (imageUrl, fileName) => {
+    setPreviewImageUrl(imageUrl);
+    setPreviewFileName(fileName);
+    setPreviewModalOpen(true);
+  };
+
+  const handleClosePreviewModal = () => {
+    setPreviewModalOpen(false);
+    setPreviewImageUrl('');
+    setPreviewFileName('');
   };
 
   const openPreview = (memberDoc, documentName) => {
-    const url = buildFileUrl(memberDoc);
-    if (!url) return;
-    setPreviewUrl(url);
-    setPreviewName(documentName || 'Preview');
-    setPreviewOpen(true);
+    // Use filePreviewService for preview modal to ensure proper token handling
+    let fileUrl = null;
+    const fileName = memberDoc.file_path || memberDoc.filePath || documentName || 'Document';
+    
+    if (memberDoc?.id) {
+      // Use filePreviewService for member documents with ID
+      try {
+        fileUrl = filePreviewService.getPreviewUrl('document-file', memberDoc.id);
+      } catch (error) {
+        console.error('Error getting preview URL:', error);
+        // Fallback to buildFileUrl
+        fileUrl = buildFileUrl(memberDoc);
+      }
+    } else if (memberDoc?.filePath || memberDoc?.file_path) {
+      // For reflected documents, use buildFileUrl
+      fileUrl = buildFileUrl(memberDoc);
+    }
+    
+    if (!fileUrl) {
+      console.error('No file URL available for preview');
+      return;
+    }
+    
+    // Check if it's an image file
+    const isImage = isImageFile(fileName) || isImageFile(fileUrl);
+    
+    if (isImage) {
+      // Open in A4-style modal for images
+      handlePreviewImage(fileUrl, fileName);
+    } else {
+      // For PDFs, open in new tab
+      window.open(fileUrl, '_blank');
+    }
   };
 
   if (loading) {
@@ -501,28 +654,28 @@ function MemberDocumentUpload() {
 
           {/* Help Guide for Documents */}
           <HelpGuide
-            title="How to Upload Documents"
+            title={t('guide.documents.title')}
             type="info"
             steps={[
               {
-                title: "Understanding Document Requirements",
-                description: "Each document card shows the document name, whether it's required or optional, accepted file types (PDF, JPG, PNG), and maximum file size. Required documents must be uploaded for your application to be processed."
+                title: t('guide.documents.steps.understanding.title'),
+                description: t('guide.documents.steps.understanding.description')
               },
               {
-                title: "Uploading a Document",
-                description: "Click the 'Upload Document' button on a document card. Select the file from your device. Make sure the file matches the required format and size. Wait for the upload to complete - you'll see a success message."
+                title: t('guide.documents.steps.uploading.title'),
+                description: t('guide.documents.steps.uploading.description')
               },
               {
-                title: "Checking Document Status",
-                description: "After uploading, documents will show status: 'Pending' (waiting for review), 'Approved' (accepted), or 'Rejected' (needs correction). You'll receive notifications about document status changes."
+                title: t('guide.documents.steps.checkingStatus.title'),
+                description: t('guide.documents.steps.checkingStatus.description')
               },
               {
-                title: "Viewing or Replacing Documents",
-                description: "Click 'View' to see your uploaded document. Click 'Replace' to upload a new version if needed. You can also check upload date and any notes from reviewers."
+                title: t('guide.documents.steps.viewingReplacing.title'),
+                description: t('guide.documents.steps.viewingReplacing.description')
               },
               {
-                title: "If Your Document is Rejected",
-                description: "If a document is rejected, check the notes section for details about what needs to be corrected. Upload a corrected version by clicking 'Replace'. You can also contact support for help."
+                title: t('guide.documents.steps.ifRejected.title'),
+                description: t('guide.documents.steps.ifRejected.description')
               }
             ]}
           />
@@ -548,7 +701,7 @@ function MemberDocumentUpload() {
                     <NotificationsIcon color="warning" />
                   </Badge>
                   <Typography variant="h6" sx={{ ml: 1 }}>
-                    New Document Requirements
+                    {t('documents.newDocumentRequirements')}
                   </Typography>
                 </Box>
                 <List>
@@ -609,20 +762,20 @@ function MemberDocumentUpload() {
                       </Box>
                       
                       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        {document.description || 'No description provided'}
+                        {document.description || t('documents.noDescription')}
                       </Typography>
                       
                       <Box sx={{ mb: 2 }}>
                         <Typography variant="caption" color="text.secondary">
-                          Required: {document.is_required ? 'Yes' : 'No'}
+                          {t('documents.required')}: {document.is_required ? t('common.yes') : t('common.no')}
                         </Typography>
                         <br />
                         <Typography variant="caption" color="text.secondary">
-                          File types: {document.file_types?.join(', ')}
+                          {t('documents.fileTypes')}: {document.file_types?.join(', ')}
                         </Typography>
                         <br />
                         <Typography variant="caption" color="text.secondary">
-                          Max size: {document.max_file_size} KB
+                          {t('documents.maxSize')}: {document.max_file_size} KB
                         </Typography>
                       </Box>
 
@@ -637,7 +790,7 @@ function MemberDocumentUpload() {
                               <>
                                 <br />
                                 <Typography variant="caption" color="text.secondary">
-                                  Notes: {memberDoc.notes}
+                                  {t('documents.notes')}: {memberDoc.notes}
                                 </Typography>
                               </>
                             )}
@@ -679,16 +832,55 @@ function MemberDocumentUpload() {
                               }}
                               title={`Preview ${document.name}`}
                             >
-                              {isImageFile(buildFileUrl(memberDoc)) ? (
-                                <img
-                                  src={buildFileUrl(memberDoc)}
-                                  alt={document.name}
-                                  style={{ maxWidth: '100%', maxHeight: '100%' }}
-                                  onError={(e) => { e.target.style.display = 'none'; }}
-                                />
-                              ) : (
-                                <PictureAsPdfIcon sx={{ fontSize: 36, color: '#7f8c8d' }} />
-                              )}
+                              {(() => {
+                                // Use filePreviewService for member documents with ID to ensure proper authentication
+                                let fileUrl = null;
+                                try {
+                                  if (memberDoc?.id) {
+                                    fileUrl = filePreviewService.getPreviewUrl('document-file', memberDoc.id);
+                                  } else {
+                                    fileUrl = buildFileUrl(memberDoc);
+                                  }
+                                } catch (error) {
+                                  console.warn('Error getting preview URL for thumbnail:', error);
+                                  fileUrl = buildFileUrl(memberDoc);
+                                }
+                                
+                                // Check if it's an image based on file path/name, not URL
+                                const fileName = memberDoc.file_path || memberDoc.filePath || '';
+                                const isImage = isImageFile(fileName) || isImageFile(fileUrl);
+                                
+                                if (isImage && fileUrl) {
+                                  // Add cache-busting parameter to ensure fresh image loads
+                                  const cacheBuster = `t=${Date.now()}`;
+                                  const separator = fileUrl.includes('?') ? '&' : '?';
+                                  const finalUrl = `${fileUrl}${separator}${cacheBuster}`;
+                                  
+                                  return (
+                                    <img
+                                      src={finalUrl}
+                                      alt={document.name}
+                                      style={{ 
+                                        width: '100%', 
+                                        height: '100%', 
+                                        objectFit: 'cover',
+                                        display: 'block'
+                                      }}
+                                      onError={(e) => { 
+                                        console.error('Error loading thumbnail image:', finalUrl, memberDoc);
+                                        e.target.style.display = 'none';
+                                        const parent = e.target.parentElement;
+                                        if (parent) {
+                                          // Show PDF icon as fallback
+                                          parent.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#7f8c8d" style="font-size: 36px;"><path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z" /></svg>';
+                                        }
+                                      }}
+                                    />
+                                  );
+                                } else {
+                                  return <PictureAsPdfIcon sx={{ fontSize: 36, color: '#7f8c8d' }} />;
+                                }
+                              })()}
                             </Box>
                             <Button
                               size="small"
@@ -696,7 +888,7 @@ function MemberDocumentUpload() {
                               onClick={() => handleUploadDialogOpen(document)}
                               variant="outlined"
                             >
-                              Replace
+                              {t('documents.replace')}
                             </Button>
                           </>
                         ) : reflecting ? (
@@ -735,7 +927,7 @@ function MemberDocumentUpload() {
             <Paper sx={{ p: 4, textAlign: 'center' }}>
               <DescriptionIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
               <Typography variant="h6" color="text.secondary">
-                No documents required at this time
+                {t('documents.requiredDocuments')} {t('common.loading')}
               </Typography>
             </Paper>
           )}
@@ -775,11 +967,11 @@ function MemberDocumentUpload() {
               </Typography>
               <Box sx={{ mb: 2 }}>
                 <Typography variant="caption" sx={{ color: '#7F8C8D' }}>
-                  Allowed file types: {selectedDocument.file_types?.join(', ')}
+                  {t('documents.fileTypes')}: {selectedDocument.file_types?.join(', ')}
                 </Typography>
                 <br />
                 <Typography variant="caption" sx={{ color: '#7F8C8D' }}>
-                  Maximum file size: {selectedDocument.max_file_size} KB
+                  {t('documents.maxSize')}: {selectedDocument.max_file_size} KB
                 </Typography>
               </Box>
             </Box>
@@ -808,17 +1000,17 @@ function MemberDocumentUpload() {
                 }
               }}
             >
-              Select File
+              {t('documents.selectFile')}
             </Button>
           </label>
           
           {selectedFile && (
             <Box sx={{ mt: 2, p: 2, bgcolor: '#F8F9FA', borderRadius: 2, border: '1px solid #E0E0E0' }}>
               <Typography variant="body2" sx={{ color: '#2C3E50', fontWeight: 500 }}>
-                Selected: {selectedFile.name}
+                {t('documents.selected')}: {selectedFile.name}
               </Typography>
               <Typography variant="caption" sx={{ color: '#7F8C8D' }}>
-                Size: {(selectedFile.size / 1024).toFixed(2)} KB
+                {t('documents.size')}: {(selectedFile.size / 1024).toFixed(2)} KB
               </Typography>
             </Box>
           )}
@@ -872,10 +1064,10 @@ function MemberDocumentUpload() {
           </Button>
         </DialogActions>
       </Dialog>
-      {/* A4-style Document Preview Modal */}
+      {/* Image Preview Modal - A4 Paper Shape (copied from PWDRecords) */}
       <Dialog
-        open={previewOpen}
-        onClose={() => setPreviewOpen(false)}
+        open={previewModalOpen}
+        onClose={handleClosePreviewModal}
         maxWidth="sm"
         fullWidth
         PaperProps={{
@@ -883,26 +1075,29 @@ function MemberDocumentUpload() {
             borderRadius: 2,
             boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
             bgcolor: '#FFFFFF',
+            // A4 paper aspect ratio: 1:1.414
             aspectRatio: '1/1.414',
             maxHeight: '90vh',
             display: 'flex',
-            flexDirection: 'column'
+            flexDirection: 'column',
+            overflow: 'hidden' // Prevent scrolling
           }
         }}
       >
         <DialogTitle sx={{ 
-          bgcolor: '#2C3E50', 
+          bgcolor: '#0b87ac', 
           color: '#FFFFFF', 
           textAlign: 'center',
           py: 1.5,
           position: 'relative',
-          flexShrink: 0
+          flexShrink: 0,
+          overflow: 'hidden' // Prevent any overflow
         }}>
           <Typography variant="h2" component="div" sx={{ fontWeight: 'bold', fontSize: '1.1rem' }}>
-            {previewName}
+            {t('documents.documentPreview')}
           </Typography>
           <IconButton
-            onClick={() => setPreviewOpen(false)}
+            onClick={handleClosePreviewModal}
             sx={{
               position: 'absolute',
               right: 16,
@@ -914,6 +1109,7 @@ function MemberDocumentUpload() {
             <CloseIcon />
           </IconButton>
         </DialogTitle>
+        
         <DialogContent sx={{ 
           p: 0, 
           bgcolor: '#FFFFFF',
@@ -921,37 +1117,59 @@ function MemberDocumentUpload() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          overflow: 'hidden'
+          overflow: 'hidden', // Prevent scrolling
+          minHeight: 0, // Allow flexbox to shrink
+          '&::-webkit-scrollbar': {
+            display: 'none' // Hide scrollbar
+          },
+          scrollbarWidth: 'none', // Hide scrollbar for Firefox
+          msOverflowStyle: 'none' // Hide scrollbar for IE/Edge
         }}>
-          {previewUrl && (
+          {previewImageUrl && (
             <Box
               sx={{
                 width: '100%',
                 height: '100%',
+                maxWidth: '100%',
+                maxHeight: '100%',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 bgcolor: '#f5f5f5',
-                position: 'relative'
+                position: 'relative',
+                overflow: 'hidden', // Prevent scrolling
+                '&::-webkit-scrollbar': {
+                  display: 'none' // Hide scrollbar
+                },
+                scrollbarWidth: 'none', // Hide scrollbar for Firefox
+                msOverflowStyle: 'none' // Hide scrollbar for IE/Edge
               }}
             >
-              {isImageFile(previewUrl) ? (
-                <img
-                  src={previewUrl}
-                  alt={previewName}
-                  style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: '4px' }}
-                  onError={(e) => { e.target.style.display = 'none'; }}
-                />
-              ) : (
-                <iframe
-                  title="preview"
-                  src={previewUrl}
-                  style={{ width: '100%', height: '100%', border: 'none' }}
-                />
-              )}
+              <img
+                src={previewImageUrl}
+                alt={previewFileName}
+                crossOrigin="anonymous"
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  width: 'auto',
+                  height: 'auto',
+                  objectFit: 'contain',
+                  borderRadius: '4px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                  display: 'block',
+                  margin: 'auto'
+                }}
+                onError={(e) => {
+                  console.error('Error loading image:', previewImageUrl);
+                  e.target.style.display = 'none';
+                  handleClosePreviewModal();
+                }}
+              />
             </Box>
           )}
         </DialogContent>
+        
       </Dialog>
       
       {/* Accessibility Settings Floating Button */}

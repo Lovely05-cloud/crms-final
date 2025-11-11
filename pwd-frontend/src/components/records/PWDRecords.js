@@ -96,6 +96,7 @@ function PWDRecords() {
     const [viewDetailsOpen, setViewDetailsOpen] = useState(false);
     const [selectedApplication, setSelectedApplication] = useState(null);
     const [currentDetailPage, setCurrentDetailPage] = useState(1); // Page 0 = header (always visible), Page 1-6 = sections
+    const [fileRefreshKey, setFileRefreshKey] = useState(0); // Key to force image refresh
     
     // File viewer modal state
     const [fileViewerOpen, setFileViewerOpen] = useState(false);
@@ -106,6 +107,7 @@ function PWDRecords() {
   const [correctionModalOpen, setCorrectionModalOpen] = useState(false);
   const [selectedDocumentsForCorrection, setSelectedDocumentsForCorrection] = useState([]);
   const [correctionNotes, setCorrectionNotes] = useState('');
+  const [submittingCorrectionRequest, setSubmittingCorrectionRequest] = useState(false);
   const [documentTypes, setDocumentTypes] = useState([]);
   const [documentMapping, setDocumentMapping] = useState({});
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
@@ -372,9 +374,34 @@ function PWDRecords() {
       }
     };
 
-    const handleViewDetails = (application) => {
+    const handleViewDetails = async (application) => {
+      // Set the application immediately for quick display
       setSelectedApplication(application);
       setViewDetailsOpen(true);
+      
+      // Fetch fresh application data to ensure we have the latest document paths
+      // Add cache-busting parameter to force fresh data
+      try {
+        const cacheBuster = `?t=${Date.now()}`;
+        const response = await api.get(`/applications${cacheBuster}`);
+        if (response && Array.isArray(response)) {
+          const freshApplication = response.find(app => app.applicationID === application.applicationID);
+          if (freshApplication) {
+            console.log('Fresh application data loaded:', {
+              applicationID: freshApplication.applicationID,
+              medicalCertificate: freshApplication.medicalCertificate,
+              idPictures: freshApplication.idPictures,
+              barangayCertificate: freshApplication.barangayCertificate
+            });
+            setSelectedApplication(freshApplication);
+            // Force refresh of file URLs by updating the refresh key
+            setFileRefreshKey(prev => prev + 1);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching fresh application data:', error);
+        // Don't show error to user, just use the cached data
+      }
     };
 
   const handleCloseDetails = () => {
@@ -443,28 +470,27 @@ function PWDRecords() {
       
       // Get the file URL using authenticated endpoint
       try {
-        // For idPictures arrays, pass the index parameter
-        const indexParam = (fileType === 'idPictures' || fileType.includes('idPicture')) ? fileIndex : null;
-        const fileUrl = filePreviewService.getPreviewUrl('application-file', selectedApplication.applicationID, documentType, indexParam);
-        
-        // Check if it's an image file by checking the field name
+        // idPictures is now a single file (standardized), but support old array format for backward compatibility
         const fileName = selectedApplication[fileType];
-        let isImage = false;
+        let actualFileName = fileName;
         
-        if (Array.isArray(fileName) || (typeof fileName === 'string' && fileName.startsWith('['))) {
-          // For arrays, check the file at the specified index
+        // Handle backward compatibility: check if it's stored as array (old format)
+        if (fileType === 'idPictures' && (Array.isArray(fileName) || (typeof fileName === 'string' && fileName.startsWith('[')))) {
           try {
             const parsed = typeof fileName === 'string' ? JSON.parse(fileName) : fileName;
-            if (Array.isArray(parsed) && parsed[fileIndex]) {
-              isImage = isImageFile(parsed[fileIndex]);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              actualFileName = parsed[0]; // Use first file from old array format
             }
           } catch (e) {
-            // Not an array, check the field name
-            isImage = isImageFile(fileType);
+            // Not a valid array, use as-is
           }
-        } else {
-          isImage = isImageFile(fileName);
         }
+        
+        // No index parameter needed anymore (idPictures is single file)
+        const fileUrl = filePreviewService.getPreviewUrl('application-file', selectedApplication.applicationID, documentType, null);
+        
+        // Check if it's an image file
+        const isImage = isImageFile(actualFileName || fileType);
         
         if (isImage) {
           // Open in modal for images
@@ -487,9 +513,8 @@ function PWDRecords() {
       const fileType = getFileTypeFromFieldName(fieldName);
       if (fileType && selectedApplication.applicationID) {
         try {
-          // For idPictures arrays, pass the index parameter
-          const indexParam = (fileType === 'idPictures' && index !== null) ? index : null;
-          const url = filePreviewService.getPreviewUrl('application-file', selectedApplication.applicationID, fileType, indexParam);
+          // idPictures is now a single file (standardized), no index parameter needed
+          const url = filePreviewService.getPreviewUrl('application-file', selectedApplication.applicationID, fileType, null);
           
           // Validate that we got an authenticated URL (should contain /api/application-file/)
           if (!url || !url.includes('/api/application-file/')) {
@@ -578,6 +603,8 @@ function PWDRecords() {
     }
 
     try {
+      setSubmittingCorrectionRequest(true);
+      
       // Debug: Log the data being sent
       const requestData = {
         applicationId: String(selectedApplication.applicationID),
@@ -598,6 +625,8 @@ function PWDRecords() {
     } catch (error) {
       console.error('Error submitting correction request:', error);
       toastService.error('Failed to send correction request. Please try again.');
+    } finally {
+      setSubmittingCorrectionRequest(false);
     }
   };
 
@@ -1963,7 +1992,16 @@ function PWDRecords() {
                               <TableCell sx={{ borderBottom: '1px solid #E0E0E0', py: 2, px: 2, width: '150px', minWidth: '150px', whiteSpace: 'nowrap' }}>
                                 {(() => {
                                   const isBarangayApproved = (row.status || '').toString().toLowerCase() === 'pending admin approval';
-                                  const disabledReason = isBarangayApproved ? '' : 'Disabled until Barangay approves the application';
+                                  const hasPendingCorrection = row.has_pending_correction === true;
+                                  const isApproveDisabled = !isBarangayApproved || hasPendingCorrection;
+                                  
+                                  let disabledReason = '';
+                                  if (!isBarangayApproved) {
+                                    disabledReason = 'Disabled until Barangay approves the application';
+                                  } else if (hasPendingCorrection) {
+                                    disabledReason = 'Disabled: Document correction request is pending. Please wait for the applicant to submit corrected documents.';
+                                  }
+                                  
                                   return (
                                     <Box sx={{ display: 'flex', gap: 1 }}>
                                       <Tooltip title="View details">
@@ -1977,12 +2015,12 @@ function PWDRecords() {
                                           View
                                         </Button>
                                       </Tooltip>
-                                      <Tooltip title={disabledReason} disableHoverListener={isBarangayApproved}>
+                                      <Tooltip title={disabledReason} disableHoverListener={!isApproveDisabled}>
                                         <span>
                                           <Button
                                             size="small"
                                             variant="contained"
-                                            disabled={!isBarangayApproved}
+                                            disabled={isApproveDisabled}
                                             onClick={() => handleApproveApplication(row.applicationID)}
                                             sx={{
                                               textTransform: 'none',
@@ -1994,13 +2032,13 @@ function PWDRecords() {
                                           </Button>
                                         </span>
                                       </Tooltip>
-                                      <Tooltip title={disabledReason} disableHoverListener={isBarangayApproved}>
+                                      <Tooltip title={disabledReason} disableHoverListener={isBarangayApproved && !hasPendingCorrection}>
                                         <span>
                                           <Button
                                             size="small"
                                             variant="outlined"
                                             color="error"
-                                            disabled={!isBarangayApproved}
+                                            disabled={!isBarangayApproved || hasPendingCorrection}
                                             onClick={() => handleRejectApplication(row.applicationID)}
                                             sx={{ textTransform: 'none' }}
                                           >
@@ -2442,12 +2480,14 @@ function PWDRecords() {
                                   }
                                   
                                   if (Array.isArray(parsedFiles)) {
-                                    // Handle multiple files (like idPictures)
+                                    // Handle arrays (backward compatibility for old idPictures data)
+                                    // For idPictures, now only show first file (standardized to single file)
+                                    const filesToShow = fieldName === 'idPictures' ? parsedFiles.slice(0, 1) : parsedFiles.slice(0, 2);
                                     return (
                                       <Box sx={{ display: 'flex', gap: 0.5 }}>
-                                        {parsedFiles.slice(0, 2).map((file, index) => {
-                                          // Always use authenticated URL for thumbnails
-                                          const singleFileUrl = getFileUrl(fieldName, index);
+                                        {filesToShow.map((file, index) => {
+                                          // Always use authenticated URL for thumbnails (no index needed for idPictures anymore)
+                                          const singleFileUrl = getFileUrl(fieldName, null);
                                           const isImage = isImageFile(file);
                                           
                                           return (
@@ -2477,7 +2517,8 @@ function PWDRecords() {
                                             >
                                               {isImage && singleFileUrl ? (
                                                 <img 
-                                                  src={singleFileUrl} 
+                                                  key={`${fieldName}-${index}-${fileRefreshKey}`}
+                                                  src={`${singleFileUrl}${singleFileUrl.includes('?') ? '&' : '?'}refresh=${fileRefreshKey}`}
                                                   alt="Preview" 
                                                   crossOrigin="anonymous"
                                                   onClick={(e) => {
@@ -2559,7 +2600,8 @@ function PWDRecords() {
                                       >
                                         {isImage && finalFileUrl ? (
                                           <img 
-                                            src={finalFileUrl} 
+                                             key={`${fieldName}-${fileRefreshKey}`}
+                                             src={`${finalFileUrl}${finalFileUrl.includes('?') ? '&' : '?'}refresh=${fileRefreshKey}`}
                                             alt="Preview" 
                                             crossOrigin="anonymous"
                                             onClick={(e) => {
@@ -2892,6 +2934,9 @@ function PWDRecords() {
                          <Box sx={{ 
                            width: 20, 
                            height: 20, 
+                           minWidth: 20,
+                           minHeight: 20,
+                           flexShrink: 0,
                            border: '2px solid #0b87ac', 
                            borderRadius: '50%',
                            display: 'flex',
@@ -2972,16 +3017,28 @@ function PWDRecords() {
              <Button
                onClick={handleSubmitCorrectionRequest}
                variant="contained"
+               disabled={submittingCorrectionRequest}
                sx={{
-                 bgcolor: '#F39C12',
+                 bgcolor: submittingCorrectionRequest ? '#BDC3C7' : '#F39C12',
                  textTransform: 'none',
                  fontWeight: 600,
                  '&:hover': {
-                   bgcolor: '#E67E22'
+                   bgcolor: submittingCorrectionRequest ? '#BDC3C7' : '#E67E22'
+                 },
+                 '&:disabled': {
+                   bgcolor: '#BDC3C7',
+                   color: '#FFFFFF'
                  }
                }}
              >
-               Send Correction Request
+               {submittingCorrectionRequest ? (
+                 <>
+                   <CircularProgress size={16} sx={{ mr: 1, color: '#FFFFFF' }} />
+                   Sending...
+                 </>
+               ) : (
+                 'Send Correction Request'
+               )}
              </Button>
            </DialogActions>
          </Dialog>

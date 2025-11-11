@@ -80,6 +80,7 @@ const PWDMemberSupportDesk = () => {
   const [archivedTickets, setArchivedTickets] = useState([]);
   const [showArchive, setShowArchive] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [submittingTicket, setSubmittingTicket] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [messageStatuses, setMessageStatuses] = useState({});
@@ -221,7 +222,6 @@ const PWDMemberSupportDesk = () => {
   const [formData, setFormData] = useState({
     subject: '',
     description: '',
-    priority: 'medium',
     category: ''
   });
 
@@ -305,7 +305,6 @@ const PWDMemberSupportDesk = () => {
     setFormData({
       subject: '',
       description: '',
-      priority: 'medium',
       category: ''
     });
   };
@@ -348,7 +347,7 @@ const PWDMemberSupportDesk = () => {
       const fileExtension = file.name.split('.').pop().toLowerCase();
       
       if (!allowedTypes.includes(fileExtension)) {
-        setError('File type not supported. Allowed types: PDF, DOC, DOCX, TXT, JPG, JPEG, PNG, GIF');
+        setError(t('support.fileFormats'));
         return;
       }
       
@@ -373,7 +372,7 @@ const PWDMemberSupportDesk = () => {
       const fileExtension = file.name.split('.').pop().toLowerCase();
       
       if (!allowedTypes.includes(fileExtension)) {
-        setError('File type not supported. Allowed types: PDF, DOC, DOCX, TXT, JPG, JPEG, PNG, GIF');
+        setError(t('support.fileFormats'));
         return;
       }
       
@@ -434,7 +433,8 @@ const PWDMemberSupportDesk = () => {
 
   const handleSubmitTicket = async () => {
     try {
-      setLoading(true);
+      setSubmittingTicket(true);
+      setError(null);
       const response = await supportService.createTicket(formData, selectedFile);
       setSuccess('Support ticket created successfully!');
       setOpenDialog(false);
@@ -450,7 +450,7 @@ const PWDMemberSupportDesk = () => {
       console.error('Error creating ticket:', error);
       setError('Failed to create support ticket');
     } finally {
-      setLoading(false);
+      setSubmittingTicket(false);
     }
   };
 
@@ -538,7 +538,7 @@ const PWDMemberSupportDesk = () => {
       const fileExtension = file.name.split('.').pop().toLowerCase();
       
       if (!allowedTypes.includes(fileExtension)) {
-        setError('File type not supported. Allowed types: PDF, DOC, DOCX, TXT, JPG, JPEG, PNG, GIF');
+        setError(t('support.fileFormats'));
         return;
       }
       
@@ -623,38 +623,38 @@ const PWDMemberSupportDesk = () => {
             {t('support.title')}
           </Typography>
           <Typography variant="body1" sx={{ color: '#000000' }}>
-            Create and manage your support tickets
+            {t('support.createAndManage')}
           </Typography>
         </Box>
 
         {/* Help Guide for Support Desk */}
         <HelpGuide
-          title="How to Use Support Desk"
+          title={t('guide.support.title')}
           type="info"
           steps={[
             {
-              title: "Creating a Support Ticket",
-              description: "Click 'Create New Ticket' button. Fill in the subject (brief summary of your issue), category, priority level, and a detailed description. Attach any files if needed (like documents or screenshots). Click 'Submit' to send your ticket."
+              title: t('guide.support.steps.creating.title'),
+              description: t('guide.support.steps.creating.description')
             },
             {
-              title: "Viewing Your Tickets",
-              description: "All your tickets are listed below. Active tickets show current conversations. Click on any ticket to see the conversation history and reply to messages from staff."
+              title: t('guide.support.steps.viewing.title'),
+              description: t('guide.support.steps.viewing.description')
             },
             {
-              title: "Replying to Tickets",
-              description: "Open a ticket to see all messages. Type your reply in the message box at the bottom. You can attach files if needed. Click 'Send' to reply. Staff will respond and you'll see their messages appear."
+              title: t('guide.support.steps.replying.title'),
+              description: t('guide.support.steps.replying.description')
             },
             {
-              title: "Understanding Ticket Status",
-              description: "Status shows: 'NEW' (just created), 'WAITING FOR REPLY' (needs your response), 'IN PROGRESS' (staff is working on it), or 'RESOLVED' (completed). Resolved tickets move to archived section."
+              title: t('guide.support.steps.status.title'),
+              description: t('guide.support.steps.status.description')
             },
             {
-              title: "Attaching Files",
-              description: "You can attach files like documents, photos, or PDFs to your tickets. Click the attachment icon, select your file, or drag and drop it. This helps staff understand your issue better."
+              title: t('guide.support.steps.attaching.title'),
+              description: t('guide.support.steps.attaching.description')
             },
             {
-              title: "Getting Help",
-              description: "If you're having trouble using the support desk, you can contact PDAO directly by phone or visit the office. Staff are available to help with both technical issues and general questions."
+              title: t('guide.support.steps.gettingHelp.title'),
+              description: t('guide.support.steps.gettingHelp.description')
             }
           ]}
         />
@@ -671,7 +671,7 @@ const PWDMemberSupportDesk = () => {
                   </Typography>
                 </Box>
                 <Typography variant="body2" sx={{ color: '#000000' }}>
-                  Waiting for Reply
+                  {t('support.waitingForReply')}
                 </Typography>
               </CardContent>
             </Card>
@@ -716,7 +716,7 @@ const PWDMemberSupportDesk = () => {
                   </Typography>
                 </Box>
                 <Typography variant="body2" sx={{ color: '#000000' }}>
-                  Total Tickets
+                  {t('support.totalTickets')}
                 </Typography>
               </CardContent>
             </Card>
@@ -784,7 +784,7 @@ const PWDMemberSupportDesk = () => {
                 color: '#2C3E50', 
                 fontSize: { xs: '1rem', sm: '1.1rem', md: '1.2rem' }
               }}>
-                Support Tickets
+                {t('support.myTickets')}
               </Typography>
               
               {/* Archive Toggle Buttons - Top Right */}
@@ -810,7 +810,7 @@ const PWDMemberSupportDesk = () => {
                     fontSize: { xs: '0.75rem', sm: '0.8rem' }
                   }}
                 >
-                  Active Tickets
+                  {t('support.activeTickets')}
                 </Button>
                 <Button
                   variant={showArchive ? "contained" : "outlined"}
@@ -830,7 +830,7 @@ const PWDMemberSupportDesk = () => {
                     fontSize: { xs: '0.75rem', sm: '0.8rem' }
                   }}
                 >
-                  Archive
+                  {t('support.archive')}
                 </Button>
               </Box>
             </Box>
@@ -1137,7 +1137,7 @@ const PWDMemberSupportDesk = () => {
                                   border: '1px solid #E0E0E0'
                                 }}>
                                   <img
-                                    src={`http://127.0.0.1:8000/api/support-tickets/messages/${message.id}/image`}
+                                    src={`${api.getBaseUrl()}/support-tickets/messages/${message.id}/image`}
                                     alt={message.attachment_name}
                                     style={{
                                       maxWidth: '250px',
@@ -1150,17 +1150,12 @@ const PWDMemberSupportDesk = () => {
                                     }}
                                     onClick={() => handlePreviewFile(message)}
                                     onError={(e) => {
-                                      console.error('Image failed to load:', `http://127.0.0.1:8000/api/support-tickets/messages/${message.id}/image`);
+                                      console.error('Image failed to load:', `${api.getBaseUrl()}/support-tickets/messages/${message.id}/image`);
                                       console.error('Message data:', message);
-                                      console.error('Image element:', e.target);
-                                      console.error('Error event:', e);
                                       e.target.style.display = 'none';
                                     }}
                                     onLoad={() => {
-                                      console.log('Image loaded successfully:', `http://127.0.0.1:8000/api/support-tickets/messages/${message.id}/image`);
-                                    }}
-                                    onLoadStart={() => {
-                                      console.log('Image loading started:', `http://127.0.0.1:8000/api/support-tickets/messages/${message.id}/image`);
+                                      console.log('Image loaded successfully:', `${api.getBaseUrl()}/support-tickets/messages/${message.id}/image`);
                                     }}
                                   />
                                   <Box sx={{ 
@@ -1449,7 +1444,7 @@ const PWDMemberSupportDesk = () => {
                         '&:hover': { bgcolor: '#2980B9' }
                       }}
                     >
-                      Reply
+                      {t('support.reply')}
                     </Button>
                     
                     <input
@@ -1461,9 +1456,8 @@ const PWDMemberSupportDesk = () => {
                         if (file) {
                           // Check file size (10MB limit)
                           if (file.size > MAX_FILE_SIZE) {
-        const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
-        setError(`File size (${fileSizeMB}MB) exceeds the maximum limit of 2MB. Please select a smaller file.`);
-                            setError('File size must be less than 10MB');
+                            const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                            setError(`File size (${fileSizeMB}MB) exceeds the maximum limit of 10MB. Please select a smaller file.`);
                             return;
                           }
                           
@@ -1472,7 +1466,7 @@ const PWDMemberSupportDesk = () => {
                           const fileExtension = file.name.split('.').pop().toLowerCase();
                           
                           if (!allowedTypes.includes(fileExtension)) {
-                            setError('File type not supported. Allowed types: PDF, DOC, DOCX, TXT, JPG, JPEG, PNG, GIF');
+                            setError(t('support.fileFormats'));
                             return;
                           }
                           
@@ -1497,12 +1491,12 @@ const PWDMemberSupportDesk = () => {
                       onClick={() => document.getElementById('file-upload-member').click()}
                       sx={{ borderColor: '#3498DB', color: '#3498DB' }}
                     >
-                      Attach File
+                      {t('support.attachFile')}
                     </Button>
                     
                     {previewFile && (
                       <Typography variant="caption" sx={{ color: '#7F8C8D' }}>
-                        {previewFile.name} ready to send
+                        {previewFile.name} {t('support.readyToSend')}
                       </Typography>
                     )}
                   </Box>
@@ -1548,68 +1542,10 @@ const PWDMemberSupportDesk = () => {
                     }}
                   />
                 </Grid>
-                <Grid item xs={6}>
+                <Grid item xs={12}>
                   <Box sx={{ mb: 1 }}>
                     <Typography variant="body2" sx={{ color: '#000000', fontWeight: 500 }}>
-                      Priority
-                    </Typography>
-                  </Box>
-                  <Select
-                    name="priority"
-                    value={formData.priority}
-                    onChange={handleInputChange}
-                    MenuProps={{
-                      PaperProps: {
-                        sx: {
-                          backgroundColor: '#FFFFFF',
-                          border: '1px solid #e9ecef',
-                          borderRadius: 3,
-                          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                          '& .MuiMenuItem-root': {
-                            backgroundColor: '#FFFFFF',
-                            color: '#2C3E50',
-                            fontSize: '0.95rem',
-                            '&:hover': {
-                              backgroundColor: '#f8f9fa',
-                            },
-                            '&.Mui-selected': {
-                              backgroundColor: '#f8f9fa',
-                              color: '#2C3E50',
-                              '&:hover': {
-                                backgroundColor: '#e9ecef',
-                              },
-                            },
-                          },
-                        }
-                      }
-                    }}
-                    sx={{
-                      color: '#000000',
-                      width: '100%',
-                      '& .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#E0E0E0',
-                      },
-                      '&:hover .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#3498DB',
-                      },
-                      '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                        borderColor: '#3498DB',
-                      },
-                      '& .MuiSvgIcon-root': {
-                        color: '#666666',
-                      },
-                    }}
-                  >
-                    <MenuItem value="low">Low</MenuItem>
-                    <MenuItem value="medium">Medium</MenuItem>
-                    <MenuItem value="high">High</MenuItem>
-                    <MenuItem value="urgent">Urgent</MenuItem>
-                  </Select>
-                </Grid>
-                <Grid item xs={6}>
-                  <Box sx={{ mb: 1 }}>
-                    <Typography variant="body2" sx={{ color: '#000000', fontWeight: 500 }}>
-                      Category
+                      {t('support.category')}
                     </Typography>
                   </Box>
                   <Select
@@ -1669,7 +1605,7 @@ const PWDMemberSupportDesk = () => {
                 <Grid item xs={12}>
                   <Box sx={{ mb: 1 }}>
                     <Typography variant="body2" sx={{ color: '#000000', fontWeight: 500 }}>
-                      Description *
+                      {t('common.description')} *
                     </Typography>
                   </Box>
                   <TextField
@@ -1680,7 +1616,7 @@ const PWDMemberSupportDesk = () => {
                     value={formData.description}
                     onChange={handleInputChange}
                     required
-                    placeholder="Please describe your issue or question in detail..."
+                    placeholder={t('support.addMessage')}
                     sx={{
                       '& .MuiOutlinedInput-root': {
                         color: '#000000',
@@ -1702,7 +1638,7 @@ const PWDMemberSupportDesk = () => {
                 <Grid item xs={12}>
                   <Box sx={{ mb: 1 }}>
                     <Typography variant="body2" sx={{ color: '#000000', fontWeight: 500 }}>
-                      Attach File (Optional)
+                      {t('support.attachFile')} ({t('common.optional') || 'Optional'})
                     </Typography>
                   </Box>
                   
@@ -1729,7 +1665,7 @@ const PWDMemberSupportDesk = () => {
                           }
                         }}
                       >
-                        Choose File
+                        {t('support.chooseFile')}
                       </Button>
                     </label>
                     
@@ -1756,7 +1692,7 @@ const PWDMemberSupportDesk = () => {
                     variant="caption" 
                     sx={{ color: '#666666', mt: 1, display: 'block' }}
                   >
-                    Supported formats: PDF, DOC, DOCX, TXT, JPG, JPEG, PNG, GIF (Max 10MB)
+                    {t('support.fileFormats')}
                   </Typography>
                 </Grid>
               </Grid>
@@ -1772,14 +1708,21 @@ const PWDMemberSupportDesk = () => {
             <Button 
               onClick={handleSubmitTicket}
               variant="contained"
-              disabled={!formData.subject.trim() || !formData.description.trim()}
+              disabled={!formData.subject.trim() || !formData.description.trim() || submittingTicket}
               sx={{
-                backgroundColor: '#3498DB',
-                '&:hover': { backgroundColor: '#2980B9' },
+                backgroundColor: submittingTicket ? '#7F8C8D' : '#3498DB',
+                '&:hover': { backgroundColor: submittingTicket ? '#7F8C8D' : '#2980B9' },
                 '&:disabled': { backgroundColor: '#7F8C8D' }
               }}
             >
-{t('support.createTicket')}
+              {submittingTicket ? (
+                <>
+                  <CircularProgress size={16} sx={{ mr: 1, color: '#FFFFFF' }} />
+                  {t('common.submitting') || 'Submitting...'}
+                </>
+              ) : (
+                t('support.createTicket')
+              )}
             </Button>
           </DialogActions>
         </Dialog>

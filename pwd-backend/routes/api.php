@@ -245,7 +245,18 @@ Route::get('/applications/status/{status}', function ($status) {
     try {
         $applications = \App\Models\Application::where('status', urldecode($status))->get();
         
-        return response()->json($applications);
+        // Add pending correction request status to each application
+        $applicationsWithCorrections = $applications->map(function ($application) {
+            $pendingCorrection = \App\Models\DocumentCorrectionRequest::where('application_id_string', $application->applicationID)
+                ->where('status', 'pending')
+                ->where('expires_at', '>', now())
+                ->first();
+            
+            $application->has_pending_correction = $pendingCorrection ? true : false;
+            return $application;
+        });
+        
+        return response()->json($applicationsWithCorrections);
     } catch (\Exception $e) {
         return response()->json([
             'success' => false,
@@ -259,7 +270,18 @@ Route::get('/applications', function () {
     try {
         $applications = \App\Models\Application::all();
         
-        return response()->json($applications);
+        // Add pending correction request status to each application
+        $applicationsWithCorrections = $applications->map(function ($application) {
+            $pendingCorrection = \App\Models\DocumentCorrectionRequest::where('application_id_string', $application->applicationID)
+                ->where('status', 'pending')
+                ->where('expires_at', '>', now())
+                ->first();
+            
+            $application->has_pending_correction = $pendingCorrection ? true : false;
+            return $application;
+        });
+        
+        return response()->json($applicationsWithCorrections);
     } catch (\Exception $e) {
         return response()->json([
             'success' => false,
@@ -568,18 +590,14 @@ Route::post('/test-application-submission', function (Request $request) {
             $data['voterCertificate'] = $voterPath;
         }
 
-        // Handle multiple ID pictures
-        $idPictures = [];
-        for ($i = 0; $i < 2; $i++) {
-            if ($request->hasFile("idPicture_$i")) {
-                $idPictureFile = $request->file("idPicture_$i");
-                $idPictureName = "id_picture_{$i}_" . time() . '.' . $idPictureFile->getClientOriginalExtension();
+        // Handle ID picture (single file, same as other documents)
+        if ($request->hasFile('idPictures') || $request->hasFile('idPicture_0')) {
+            $idPictureFile = $request->hasFile('idPictures') 
+                ? $request->file('idPictures') 
+                : $request->file('idPicture_0');
+            $idPictureName = 'id_picture_' . time() . '.' . $idPictureFile->getClientOriginalExtension();
                 $idPicturePath = $idPictureFile->storeAs($uploadPath, $idPictureName, 'public');
-                $idPictures[] = $idPicturePath;
-            }
-        }
-        if (!empty($idPictures)) {
-            $data['idPictures'] = json_encode($idPictures);
+            $data['idPictures'] = $idPicturePath;
         }
 
         if ($request->hasFile('birthCertificate')) {
@@ -1234,29 +1252,73 @@ Route::post('/applications/correction-request', function (Request $request) {
     }
 });
 
-// Get correction request by token
+// Get correction request by token (public endpoint, no auth required)
 Route::get('/applications/correction-request/{token}', function ($token) {
     try {
+        \Illuminate\Support\Facades\Log::info('Fetching correction request', [
+            'token' => $token,
+            'token_length' => strlen($token)
+        ]);
+        
+        // First, try to find pending and not expired correction request
         $correctionRequest = \App\Models\DocumentCorrectionRequest::where('correction_token', $token)
             ->where('status', 'pending')
             ->where('expires_at', '>', now())
             ->first();
 
+        // If not found, check if it exists but is completed or expired
         if (!$correctionRequest) {
+            $existingRequest = \App\Models\DocumentCorrectionRequest::where('correction_token', $token)->first();
+            
+            \Illuminate\Support\Facades\Log::warning('Correction request not found or invalid', [
+                'token' => $token,
+                'exists' => $existingRequest ? true : false,
+                'status_if_exists' => $existingRequest ? $existingRequest->status : null,
+                'expires_at_if_exists' => $existingRequest ? $existingRequest->expires_at : null,
+                'is_expired' => $existingRequest && $existingRequest->expires_at ? $existingRequest->expires_at->isPast() : null
+            ]);
+            
+            if ($existingRequest) {
+                if ($existingRequest->status === 'completed') {
             return response()->json([
                 'success' => false,
-                'message' => 'Invalid, expired, or completed correction request'
+                        'message' => 'This correction request has already been completed. If you need to make additional corrections, please contact support.',
+                        'status' => 'completed'
+                    ], 404);
+                } elseif ($existingRequest->expires_at && $existingRequest->expires_at->isPast()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'This correction request has expired. Please request a new correction link from the administrator.',
+                        'status' => 'expired'
+                    ], 404);
+                }
+            }
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid or expired correction request. Please check your link or contact support.'
             ], 404);
         }
 
         // Find the application
         $application = \App\Models\Application::where('applicationID', $correctionRequest->application_id_string)->first();
         if (!$application) {
+            \Illuminate\Support\Facades\Log::error('Application not found for correction request', [
+                'token' => $token,
+                'application_id_string' => $correctionRequest->application_id_string
+            ]);
+            
             return response()->json([
                 'success' => false,
                 'message' => 'Application not found'
             ], 404);
         }
+
+        \Illuminate\Support\Facades\Log::info('Correction request found successfully', [
+            'token' => $token,
+            'correction_request_id' => $correctionRequest->id,
+            'application_id' => $application->applicationID
+        ]);
 
         return response()->json([
             'success' => true,
@@ -1267,30 +1329,51 @@ Route::get('/applications/correction-request/{token}', function ($token) {
     } catch (\Exception $e) {
         \Illuminate\Support\Facades\Log::error('Error fetching correction request', [
             'token' => $token,
-            'error' => $e->getMessage()
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
         ]);
         
         return response()->json([
             'success' => false,
-            'message' => 'Failed to fetch correction request'
+            'message' => 'Failed to fetch correction request: ' . $e->getMessage()
         ], 500);
     }
+});
+
+// Handle OPTIONS preflight for submit-corrections (important for mobile browsers)
+Route::options('/applications/submit-corrections', function () {
+    return response()->json([], 200)->withHeaders([
+        'Access-Control-Allow-Origin' => '*',
+        'Access-Control-Allow-Methods' => 'POST, OPTIONS',
+        'Access-Control-Allow-Headers' => 'Content-Type, Authorization, X-Requested-With',
+        'Access-Control-Max-Age' => '86400',
+    ]);
 });
 
 // Submit document corrections
 Route::post('/applications/submit-corrections', function (Request $request) {
     try {
+        \Illuminate\Support\Facades\Log::info('Document correction submission received', [
+            'has_correction_token' => $request->has('correction_token'),
+            'correction_token' => $request->input('correction_token'),
+            'has_files' => $request->hasFile('medicalCertificate') || $request->hasFile('idPictures') || $request->hasFile('barangayCertificate'),
+            'user_agent' => $request->header('User-Agent'),
+            'origin' => $request->header('Origin'),
+            'content_type' => $request->header('Content-Type'),
+            'content_length' => $request->header('Content-Length'),
+            'request_method' => $request->method()
+        ]);
+        
         $request->validate([
             'correction_token' => 'required|string|size:32',
-            'medicalCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
-            'clinicalAbstract' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
-            'voterCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
-            'idPictures' => 'nullable|array|max:2',
-            'idPictures.*' => 'file|mimes:jpeg,png,jpg|max:2048',
-            'birthCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
-            'wholeBodyPicture' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
-            'affidavit' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
-            'barangayCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048'
+            'medicalCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:15360',
+            'clinicalAbstract' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:15360',
+            'voterCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:15360',
+            'idPictures' => 'nullable|file|mimes:jpeg,png,jpg|max:15360',
+            'birthCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:15360',
+            'wholeBodyPicture' => 'nullable|file|mimes:jpeg,png,jpg|max:15360',
+            'affidavit' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:15360',
+            'barangayCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:15360'
         ]);
 
         // Find the correction request
@@ -1318,30 +1401,120 @@ Route::post('/applications/submit-corrections', function (Request $request) {
         // Process file uploads
         $uploadedFiles = [];
         $documentsToCorrect = json_decode($correctionRequest->documents_to_correct, true);
+        
+        // Use the same storage path structure as original application
+        $uploadPath = 'uploads/applications/' . date('Y/m/d');
+        \Illuminate\Support\Facades\Storage::disk('public')->makeDirectory($uploadPath);
+
+        // Get all uploaded files once for efficiency
+        $allFiles = $request->allFiles();
+        
+        \Illuminate\Support\Facades\Log::info('Processing document corrections', [
+            'documents_to_correct' => $documentsToCorrect,
+            'all_uploaded_files' => array_keys($allFiles)
+        ]);
 
         foreach ($documentsToCorrect as $docType) {
-            if ($request->hasFile($docType)) {
-                $file = $request->file($docType);
-                
-                // Handle multiple files for idPictures
-                if ($docType === 'idPictures' && is_array($file)) {
-                    $fileNames = [];
-                    foreach ($file as $index => $singleFile) {
-                        $fileName = time() . '_' . $index . '_' . $singleFile->getClientOriginalName();
-                        $singleFile->move(public_path('storage/applications'), $fileName);
-                        $fileNames[] = $fileName;
-                    }
-                    $uploadedFiles[$docType] = json_encode($fileNames);
-                } else {
-                    $fileName = time() . '_' . $file->getClientOriginalName();
-                    $file->move(public_path('storage/applications'), $fileName);
-                    $uploadedFiles[$docType] = $fileName;
+            // Handle all documents the same way (including idPictures)
+            // Support both direct file name and array notation for backward compatibility
+            $file = null;
+            
+            // Try direct file name first (standard way)
+            if (isset($allFiles[$docType]) || $request->hasFile($docType)) {
+                $file = isset($allFiles[$docType]) ? $allFiles[$docType] : $request->file($docType);
+            }
+            // For idPictures, also check array notation (idPictures[0]) for backward compatibility
+            elseif ($docType === 'idPictures') {
+                if (isset($allFiles['idPictures']) && is_array($allFiles['idPictures']) && !empty($allFiles['idPictures'])) {
+                    $file = $allFiles['idPictures'][0];
+                } elseif (isset($allFiles['idPictures.0'])) {
+                    $file = $allFiles['idPictures.0'];
+                } elseif ($request->hasFile('idPictures.0')) {
+                    $file = $request->file('idPictures.0');
                 }
+            }
+            
+            if ($file && $file->isValid()) {
+                // Delete old file if it exists
+                // Handle both string (new format) and array (old format) for backward compatibility
+                $oldFilePath = $application->$docType;
+                if ($oldFilePath) {
+                    // If it's stored as array (old format), get first element
+                    if (is_array($oldFilePath)) {
+                        $oldFilePath = !empty($oldFilePath) ? $oldFilePath[0] : null;
+                    } elseif (is_string($oldFilePath) && (strpos($oldFilePath, '[') === 0 || strpos($oldFilePath, '"') === 0)) {
+                        // Try to decode if it's a JSON string
+                        $decoded = json_decode($oldFilePath, true);
+                        if (is_array($decoded) && !empty($decoded)) {
+                            $oldFilePath = $decoded[0];
+                        }
+                    }
+                    
+                    if ($oldFilePath) {
+                        \Illuminate\Support\Facades\Storage::disk('public')->delete($oldFilePath);
+                    }
+                }
+                
+                // Generate filename based on document type
+                $fileNamePrefix = match($docType) {
+                    'medicalCertificate' => 'medical_cert',
+                    'clinicalAbstract' => 'clinical_abstract',
+                    'voterCertificate' => 'voter_certificate',
+                    'birthCertificate' => 'birth_certificate',
+                    'wholeBodyPicture' => 'whole_body_picture',
+                    'affidavit' => 'affidavit',
+                    'barangayCertificate' => 'barangay_certificate',
+                    'idPictures' => 'id_picture',
+                    default => $docType
+                };
+                
+                // Use microtime for more unique filenames to avoid collisions
+                $uniqueId = str_replace('.', '', microtime(true));
+                $fileName = $fileNamePrefix . '_' . $uniqueId . '.' . $file->getClientOriginalExtension();
+                $filePath = $file->storeAs($uploadPath, $fileName, 'public');
+                $uploadedFiles[$docType] = $filePath;
+                
+                \Illuminate\Support\Facades\Log::info('Processed file for correction', [
+                    'doc_type' => $docType,
+                    'file_path' => $filePath,
+                    'old_file_path' => $oldFilePath,
+                    'original_name' => $file->getClientOriginalName(),
+                    'file_deleted' => $oldFilePath ? \Illuminate\Support\Facades\Storage::disk('public')->exists($oldFilePath) ? 'not_deleted' : 'deleted' : 'no_old_file'
+                ]);
+            } else {
+                \Illuminate\Support\Facades\Log::warning('File not valid or not found', [
+                    'doc_type' => $docType,
+                    'has_file_in_allFiles' => isset($allFiles[$docType]),
+                    'has_file_in_request' => $request->hasFile($docType)
+                ]);
             }
         }
 
+        // Log what we're about to update
+        \Illuminate\Support\Facades\Log::info('About to update application with files', [
+            'application_id' => $application->applicationID,
+            'uploaded_files' => $uploadedFiles,
+            'uploaded_files_keys' => array_keys($uploadedFiles),
+            'current_medicalCertificate' => $application->medicalCertificate,
+            'current_idPictures' => $application->idPictures,
+            'current_barangayCertificate' => $application->barangayCertificate
+        ]);
+
         // Update application with new files
-        $application->update($uploadedFiles);
+        $updateResult = $application->update($uploadedFiles);
+        
+        // Refresh the model to get the latest data
+        $application->refresh();
+
+        // Log what was actually saved
+        \Illuminate\Support\Facades\Log::info('Application updated with files', [
+            'application_id' => $application->applicationID,
+            'update_result' => $updateResult,
+            'updated_medicalCertificate' => $application->medicalCertificate,
+            'updated_idPictures' => $application->idPictures,
+            'updated_barangayCertificate' => $application->barangayCertificate,
+            'was_changed' => $application->wasChanged()
+        ]);
 
         // Mark correction request as completed
         $correctionRequest->markAsCompleted();
@@ -1486,18 +1659,14 @@ Route::post('/applications', function (Request $request) {
             $data['voterCertificate'] = $voterPath;
         }
 
-        // Handle multiple ID pictures
-        $idPictures = [];
-        for ($i = 0; $i < 2; $i++) {
-            if ($request->hasFile("idPicture_$i")) {
-                $idPictureFile = $request->file("idPicture_$i");
-                $idPictureName = "id_picture_{$i}_" . time() . '.' . $idPictureFile->getClientOriginalExtension();
+        // Handle ID picture (single file, same as other documents)
+        if ($request->hasFile('idPictures') || $request->hasFile('idPicture_0')) {
+            $idPictureFile = $request->hasFile('idPictures') 
+                ? $request->file('idPictures') 
+                : $request->file('idPicture_0');
+            $idPictureName = 'id_picture_' . time() . '.' . $idPictureFile->getClientOriginalExtension();
                 $idPicturePath = $idPictureFile->storeAs($uploadPath, $idPictureName, 'public');
-                $idPictures[] = $idPicturePath;
-            }
-        }
-        if (!empty($idPictures)) {
-            $data['idPictures'] = json_encode($idPictures);
+            $data['idPictures'] = $idPicturePath;
         }
 
         if ($request->hasFile('birthCertificate')) {
@@ -1755,31 +1924,63 @@ Route::get('application-file/{applicationId}/{fileType}', function($applicationI
             ], 404);
         }
         
-        // Handle idPictures (array) - support index parameter
+        // Handle idPictures - now stored as single file (standardized), but support old array format for backward compatibility
         if ($fileType === 'idPictures') {
-            $idPictures = is_string($filePath) ? json_decode($filePath, true) : $filePath;
-            if (is_array($idPictures) && count($idPictures) > 0) {
-                // Get index from query parameter (default to 0)
+            // Check if it's stored as array (old format) or string (new format)
+            if (is_array($filePath) && count($filePath) > 0) {
+                // Old format: already an array - get first file (or index if provided)
                 $index = request()->get('index', 0);
                 $index = (int)$index;
-                if ($index < 0 || $index >= count($idPictures)) {
+                if ($index < 0 || $index >= count($filePath)) {
+                    $index = 0;
+                }
+                $filePath = $filePath[$index];
+            } elseif (is_string($filePath)) {
+                // Check if it's a JSON string (old format) or regular path (new format)
+                // JSON arrays start with '[' and JSON strings start with '"'
+                if ((strpos(trim($filePath), '[') === 0) || (strpos(trim($filePath), '"') === 0 && strpos(trim($filePath), '[') !== false)) {
+                    // Try to decode if it's a JSON string (old format)
+                    $decoded = json_decode($filePath, true);
+                    if (is_array($decoded) && count($decoded) > 0) {
+                        // Old format: array - get first file (or index if provided)
+                        $index = request()->get('index', 0);
+                        $index = (int)$index;
+                        if ($index < 0 || $index >= count($decoded)) {
                     $index = 0; // Default to first image if index is invalid
                 }
-                $filePath = $idPictures[$index];
-            } else {
-                return response()->json([
-                    'error' => 'ID pictures not found for this application',
-                    'application_id' => $applicationId
-                ], 404);
+                        $filePath = $decoded[$index];
+                    }
+                    // If decoding fails or returns null, treat as regular string path (new format)
+                }
+                // If it's a regular string path (new format), use it as-is
             }
         }
         
         $fullFilePath = storage_path('app/public/' . $filePath);
         
+        // Log for debugging
+        \Illuminate\Support\Facades\Log::info('Serving application file', [
+            'application_id' => $applicationId,
+            'file_type' => $fileType,
+            'file_path' => $filePath,
+            'full_file_path' => $fullFilePath,
+            'file_exists' => file_exists($fullFilePath)
+        ]);
+        
         if (!file_exists($fullFilePath)) {
+            \Illuminate\Support\Facades\Log::error('Application file not found', [
+                'application_id' => $applicationId,
+                'file_type' => $fileType,
+                'file_path' => $filePath,
+                'full_file_path' => $fullFilePath,
+                'storage_path' => storage_path('app/public'),
+                'directory_exists' => is_dir(storage_path('app/public'))
+            ]);
+            
             return response()->json([
                 'error' => 'File not found on disk',
-                'file_path' => $fullFilePath,
+                'file_path' => $filePath,
+                'full_file_path' => $fullFilePath,
                 'application_id' => $applicationId,
                 'file_type' => $fileType
             ], 404);
@@ -1791,6 +1992,86 @@ Route::get('application-file/{applicationId}/{fileType}', function($applicationI
         
         // Generate filename
         $fileName = $fileType . '_' . $application->firstName . '_' . $application->lastName . '.' . pathinfo($fullFilePath, PATHINFO_EXTENSION);
+        
+        // Set appropriate headers - reduce cache time for application files that might be updated
+        $headers = [
+            'Content-Type' => $mimeType,
+            'Content-Length' => $fileSize,
+            'Content-Disposition' => 'inline; filename="' . $fileName . '"',
+            'Cache-Control' => 'private, max-age=60, must-revalidate', // Reduced to 60 seconds and must-revalidate
+            'Pragma' => 'no-cache',
+            'Expires' => '0'
+        ];
+
+        // Return file response with proper headers
+        return response()->file($fullFilePath, $headers);
+        
+    } catch (\Exception $e) {
+        return response()->json([
+            'error' => 'Error serving application file: ' . $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ], 500);
+    }
+});
+
+// Authorization letter file serving route
+Route::get('authorization-letter/{claimId}', function($claimId) {
+    try {
+        // Check for token-based authentication
+        $user = Auth::user();
+        if (!$user && request()->has('token')) {
+            $token = request()->get('token');
+            $user = \App\Models\User::where('remember_token', $token)->first();
+            if ($user) {
+                Auth::setUser($user);
+            }
+        }
+        
+        $claim = \App\Models\BenefitClaim::findOrFail($claimId);
+        
+        // Check permissions if user is authenticated
+        if ($user) {
+            // Admin, SuperAdmin, and Staff2 can access any authorization letter
+            if (!in_array($user->role, ['Admin', 'SuperAdmin', 'Staff2'])) {
+                // PWD members can only access their own authorization letters
+                if ($user->role === 'PWDMember' && $claim->pwdID !== $user->userID) {
+                    return response()->json([
+                        'error' => 'Unauthorized access to authorization letter'
+                    ], 403);
+                }
+            }
+        }
+        
+        if (!$claim->authorizationLetter) {
+            return response()->json([
+                'error' => 'Authorization letter not found for this claim'
+            ], 404);
+        }
+        
+        $filePath = $claim->authorizationLetter;
+        $fullFilePath = storage_path('app/public/' . $filePath);
+        
+        if (!file_exists($fullFilePath)) {
+            \Illuminate\Support\Facades\Log::error('Authorization letter file not found', [
+                'claim_id' => $claimId,
+                'file_path' => $filePath,
+                'full_file_path' => $fullFilePath,
+                'storage_path' => storage_path('app/public')
+            ]);
+            
+            return response()->json([
+                'error' => 'File not found on disk',
+                'file_path' => $filePath,
+                'full_file_path' => $fullFilePath
+            ], 404);
+        }
+        
+        // Get file info
+        $fileSize = filesize($fullFilePath);
+        $mimeType = mime_content_type($fullFilePath);
+        
+        // Generate filename
+        $fileName = 'authorization_letter_' . $claimId . '.' . pathinfo($fullFilePath, PATHINFO_EXTENSION);
         
         // Set appropriate headers
         $headers = [
@@ -1806,7 +2087,7 @@ Route::get('application-file/{applicationId}/{fileType}', function($applicationI
         
     } catch (\Exception $e) {
         return response()->json([
-            'error' => 'Error serving application file: ' . $e->getMessage(),
+            'error' => 'Error serving authorization letter: ' . $e->getMessage(),
             'trace' => $e->getTraceAsString()
         ], 500);
     }
@@ -2404,6 +2685,19 @@ Route::middleware('auth:sanctum')->post('/applications/{applicationId}/approve-a
             ], 400);
         }
 
+        // Check if there's a pending document correction request
+        $pendingCorrection = \App\Models\DocumentCorrectionRequest::where('application_id_string', $applicationId)
+            ->where('status', 'pending')
+            ->where('expires_at', '>', now())
+            ->first();
+        
+        if ($pendingCorrection) {
+            return response()->json([
+                'error' => 'Cannot approve application',
+                'message' => 'A document correction request is pending. Please wait for the applicant to submit corrected documents before approving.'
+            ], 400);
+        }
+
         // Generate secure random password
         $randomPassword = \Illuminate\Support\Str::random(12);
         
@@ -2456,6 +2750,24 @@ Route::middleware('auth:sanctum')->post('/applications/{applicationId}/approve-a
         $newUser->status = 'Active';
         $newUser->password_change_required = true; // Require password change on first login
         $newUser->save();
+
+        // Migrate documents from application to member_documents table
+        try {
+            $documentMigrationService = new \App\Services\DocumentMigrationService();
+            $migrationResult = $documentMigrationService->migrateApplicationDocuments($application, $newUser, $user->userID);
+            
+            \Illuminate\Support\Facades\Log::info('Document migration result', [
+                'application_id' => $application->applicationID,
+                'migration_result' => $migrationResult
+            ]);
+        } catch (\Exception $migrationError) {
+            \Illuminate\Support\Facades\Log::error('Document migration failed during approval', [
+                'application_id' => $application->applicationID,
+                'error' => $migrationError->getMessage(),
+                'trace' => $migrationError->getTraceAsString()
+            ]);
+            // Don't fail the approval if migration fails, just log it
+        }
 
         // Send approval email
         $emailSent = false;

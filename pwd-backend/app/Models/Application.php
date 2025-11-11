@@ -56,8 +56,7 @@ class Application extends Model
         'submissionDate' => 'date',
         'birthDate' => 'date',
         'disabilityDate' => 'date',
-        'status' => 'string',
-        'idPictures' => 'array'
+        'status' => 'string'
     ];
 
     // Relationships

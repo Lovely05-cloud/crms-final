@@ -100,30 +100,43 @@ export const announcementService = {
     }
   },
 
-  // Get filtered announcements for PWD members based on their barangay
+  // Get filtered announcements for PWD members - show ALL active announcements
   getFilteredForPWDMember: async (userBarangay) => {
     try {
       const response = await api.get('/announcements');
       const announcementsData = response || [];
       
+      console.log('All announcements fetched:', announcementsData.length);
+      console.log('User barangay:', userBarangay);
+      
       // Filter announcements for PWD Members:
-      // 1. Public announcements (targetAudience = 'All')
-      // 2. PWD-specific announcements (targetAudience = 'PWD Members' or 'PWDMember')
-      // 3. Barangay-specific announcements (targetAudience matches user's barangay)
+      // Show ALL active, non-expired announcements regardless of target audience
+      // This allows PWD members to see all available announcements
       const filteredAnnouncements = announcementsData.filter(announcement => {
-        const targetAudience = announcement.targetAudience;
+        // First, check if announcement is Active
+        if (announcement.status !== 'Active') {
+          console.log('Skipping announcement (not Active):', announcement.title, 'Status:', announcement.status);
+          return false;
+        }
         
-        // Show public announcements
-        if (targetAudience === 'All') return true;
+        // Check if announcement has expired
+        if (announcement.expiryDate) {
+          const expiryDate = new Date(announcement.expiryDate);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          if (expiryDate < today) {
+            console.log('Skipping announcement (expired):', announcement.title, 'Expiry:', announcement.expiryDate);
+            return false;
+          }
+        }
         
-        // Show PWD-specific announcements
-        if (targetAudience === 'PWD Members' || targetAudience === 'PWDMember') return true;
-        
-        // Show barangay-specific announcements
-        if (userBarangay && targetAudience === userBarangay) return true;
-        
-        return false;
+        // Include all active, non-expired announcements
+        console.log('Including announcement:', announcement.title, 'Target:', announcement.targetAudience);
+        return true;
       });
+      
+      console.log('Filtered announcements count:', filteredAnnouncements.length);
+      console.log('Filtered announcements:', filteredAnnouncements.map(a => ({ title: a.title, status: a.status, targetAudience: a.targetAudience })));
       
       return filteredAnnouncements;
     } catch (error) {

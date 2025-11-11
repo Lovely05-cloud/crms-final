@@ -36,12 +36,21 @@ async function request(path, { method = 'GET', headers = {}, body, auth = true }
     delete finalHeaders['Content-Type'];
   }
 
+  // Create AbortController for timeout handling (especially important for mobile)
+  const controller = new AbortController();
+  let timeoutId = null;
+  
   try {
+    timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout for large file uploads
+    
     const res = await fetch(`${API_BASE_URL}${path}`, {
       method,
       headers: finalHeaders,
       body: usingFormData ? body : body ? JSON.stringify(body) : undefined,
+      signal: controller.signal
     });
+    
+    if (timeoutId) clearTimeout(timeoutId);
 
     const text = await res.text();
     let data;
@@ -57,7 +66,22 @@ async function request(path, { method = 'GET', headers = {}, body, auth = true }
     return data;
     
   } catch (error) {
+    if (timeoutId) clearTimeout(timeoutId);
     console.error(`Failed with URL ${API_BASE_URL}${path}:`, error.message);
+    
+    // Provide more specific error messages for mobile
+    if (error.name === 'AbortError') {
+      const timeoutError = new Error('Request timed out. The file upload may be too large or your connection is slow. Please try again with a smaller file or better connection.');
+      timeoutError.status = 408;
+      throw timeoutError;
+    }
+    
+    if (error.message && error.message.includes('Failed to fetch')) {
+      const networkError = new Error('Network error. Please check your internet connection and try again.');
+      networkError.status = 0;
+      throw networkError;
+    }
+    
     throw error;
   }
 }
@@ -71,6 +95,7 @@ export const api = {
   setToken: (token) => localStorage.setItem('auth.token', JSON.stringify(token)),
   clearToken: () => localStorage.removeItem('auth.token'),
   getStorageUrl: (path) => `${STORAGE_BASE_URL}/storage/${path}`,
+  getBaseUrl: () => API_BASE_URL,
   getFilePreviewUrl: (type, id, fileType = null) => {
     const baseUrl = API_BASE_URL;
     switch (type) {

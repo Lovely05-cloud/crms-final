@@ -49,10 +49,12 @@ import {
 import AdminSidebar from '../shared/AdminSidebar';
 import FrontDeskSidebar from '../shared/FrontDeskSidebar';
 import { useAuth } from '../../contexts/AuthContext';
+import { api } from '../../services/api';
 import pwdMemberService from '../../services/pwdMemberService';
 import QRCodeService from '../../services/qrCodeService';
 import SuccessModal from '../shared/SuccessModal';
 import { useModal } from '../../hooks/useModal';
+import { jsPDF } from 'jspdf';
 
 function PWDCard() {
   const { currentUser } = useAuth();
@@ -62,6 +64,7 @@ function PWDCard() {
   const [error, setError] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
   const [qrCodeDataURL, setQrCodeDataURL] = useState('');
+  const [idPictureUrl, setIdPictureUrl] = useState(null);
   
   // Success modal
   const { modalOpen, modalConfig, showModal, hideModal } = useModal();
@@ -200,6 +203,96 @@ function PWDCard() {
     fetchPwdMembers();
   }, []);
 
+  // Fetch ID picture from member documents when member is selected
+  useEffect(() => {
+    if (!selectedMember || pwdMembers.length === 0) {
+      setIdPictureUrl(null);
+      return;
+    }
+    
+    const fetchIdPicture = async () => {
+      try {
+        const member = pwdMembers.find(m => m.id === selectedMember);
+        if (!member || !member.memberId) {
+          setIdPictureUrl(null);
+          return;
+        }
+        
+        console.log('Fetching ID picture for member:', member.memberId);
+        // Fetch member documents for the selected member
+        // Use the admin endpoint to get all members with their documents, then filter for this member
+        const response = await api.get('/documents/all-members');
+        
+        if (response && response.success && response.members) {
+          // Find the specific member in the response
+          const targetMember = response.members.find(m => 
+            m.id === member.memberId || 
+            m.userID === member.memberId ||
+            m.pwd_member?.userID === member.memberId
+          );
+          
+          // Handle both camelCase (from backend) and snake_case (normalized)
+          const memberDocs = targetMember.memberDocuments || targetMember.member_documents || [];
+          
+          if (memberDocs.length > 0) {
+            // Find the ID Pictures document for this member
+            const idPicturesDoc = memberDocs.find(md => {
+              const docName = md.requiredDocument?.name || md.required_document?.name;
+              return docName === 'ID Pictures' || docName === 'ID Picture';
+            });
+            
+            if (idPicturesDoc) {
+              const memberDoc = idPicturesDoc;
+              
+              if (memberDoc.id) {
+                // Use the document-file API endpoint to get the authenticated URL
+                const fileUrl = api.getFilePreviewUrl('document-file', memberDoc.id);
+                
+                // Add authentication token if available
+                const token = localStorage.getItem('auth.token');
+                if (token) {
+                  try {
+                    const tokenData = JSON.parse(token);
+                    const tokenValue = typeof tokenData === 'string' ? tokenData : tokenData.token;
+                    if (tokenValue) {
+                      const separator = fileUrl.includes('?') ? '&' : '?';
+                      const finalUrl = `${fileUrl}${separator}token=${tokenValue}`;
+                      setIdPictureUrl(finalUrl);
+                      console.log('ID picture URL set from member documents:', finalUrl);
+                      return;
+                    }
+                  } catch (error) {
+                    console.warn('Error parsing auth token:', error);
+                  }
+                }
+                
+                setIdPictureUrl(fileUrl);
+                console.log('ID picture URL set from member documents:', fileUrl);
+              } else {
+                console.log('Member document has no ID, cannot fetch file');
+                setIdPictureUrl(null);
+              }
+            } else {
+              console.log('No ID Pictures document found in member documents');
+              setIdPictureUrl(null);
+            }
+          } else {
+            console.log('No documents found for this member');
+            setIdPictureUrl(null);
+          }
+        } else {
+          console.log('No documents found or invalid response');
+          setIdPictureUrl(null);
+        }
+      } catch (error) {
+        console.error('Error fetching ID picture from member documents:', error);
+        setIdPictureUrl(null);
+      }
+    };
+    
+    fetchIdPicture();
+  }, [selectedMember, pwdMembers]);
+
   // Generate QR code for selected member
   useEffect(() => {
     if (!selectedMember || pwdMembers.length === 0) return;
@@ -220,8 +313,254 @@ function PWDCard() {
   }, [selectedMember, pwdMembers]);
 
 
-  const handleDownloadPDF = () => {
-    console.log('Download PDF clicked');
+  const handleDownloadPDF = async () => {
+    if (!selectedMemberData) {
+      showModal({
+        type: 'warning',
+        title: 'No Member Selected',
+        message: 'Please select a PWD member to generate their card PDF.',
+        buttonText: 'OK'
+      });
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      const memberName = selectedMemberData.name || `${selectedMemberData.firstName || ''} ${selectedMemberData.middleName || ''} ${selectedMemberData.lastName || ''}`.trim() || 'Unknown';
+      const memberId = selectedMemberData.pwd_id || selectedMemberData.id || `PWD-${selectedMemberData.userID || 'N/A'}`;
+      const disabilityType = selectedMemberData.disabilityType || selectedMemberData.typeOfDisability || 'NOT SPECIFIED';
+      const province = selectedMemberData.province || 'LAGUNA';
+      const cityMunicipality = selectedMemberData.cityMunicipality || selectedMemberData.city || 'CABUYAO';
+
+      // Create PDF in landscape orientation (3.375in x 2.125in)
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'in',
+        format: [3.375, 2.125]
+      });
+
+      // Set up dimensions
+      const cardWidth = 3.375;
+      const cardHeight = 2.125;
+      const margin = 0.1;
+      const contentWidth = cardWidth - (margin * 2);
+      const contentHeight = cardHeight - (margin * 2);
+
+      // Draw border
+      pdf.setDrawColor(0, 0, 0);
+      pdf.setLineWidth(0.01);
+      pdf.rect(margin, margin, contentWidth, contentHeight);
+
+      // Top section with flag, header, seal, and disability symbol
+      const topSectionY = margin + 0.15;
+      const topSectionHeight = 0.5;
+
+      // Draw Philippine flag
+      const flagX = margin + 0.15;
+      const flagY = topSectionY;
+      const flagWidth = 0.6;
+      const flagHeight = 0.4;
+
+      // Flag border
+      pdf.setDrawColor(0, 0, 0);
+      pdf.setLineWidth(0.01);
+      pdf.rect(flagX, flagY, flagWidth, flagHeight);
+
+      // White background (triangle area will be white by default)
+      pdf.setFillColor(255, 255, 255);
+      pdf.rect(flagX, flagY, flagWidth * 0.33, flagHeight, 'F');
+
+      // Blue stripe (top right)
+      pdf.setFillColor(0, 56, 168);
+      pdf.rect(flagX + flagWidth * 0.33, flagY, flagWidth * 0.67, flagHeight / 2, 'F');
+
+      // Red stripe (bottom right)
+      pdf.setFillColor(206, 17, 38);
+      pdf.rect(flagX + flagWidth * 0.33, flagY + flagHeight / 2, flagWidth * 0.67, flagHeight / 2, 'F');
+
+      // Golden sun (simplified as circle)
+      pdf.setFillColor(252, 209, 22);
+      pdf.circle(flagX + flagWidth * 0.2, flagY + flagHeight / 2, 0.08, 'F');
+
+      // Golden stars (simplified as small circles)
+      pdf.circle(flagX + flagWidth * 0.1, flagY + flagHeight * 0.15, 0.03, 'F');
+      pdf.circle(flagX + flagWidth * 0.15, flagY + flagHeight * 0.15, 0.03, 'F');
+      pdf.circle(flagX + flagWidth * 0.1, flagY + flagHeight * 0.85, 0.03, 'F');
+
+      // Header text
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text('REPUBLIC OF THE PHILIPPINES', flagX + flagWidth + 0.15, flagY + 0.08);
+      
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Province of ${province}`, flagX + flagWidth + 0.15, flagY + 0.18);
+      
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`CITY/MUNICIPALITY OF ${cityMunicipality}`, flagX + flagWidth + 0.15, flagY + 0.28);
+
+      // Municipal seal (simplified as circle)
+      const sealX = cardWidth - margin - 0.5;
+      const sealY = topSectionY;
+      pdf.setDrawColor(0, 0, 0);
+      pdf.setLineWidth(0.01);
+      pdf.circle(sealX, sealY + flagHeight / 2, 0.25);
+      pdf.circle(sealX, sealY + flagHeight / 2, 0.2);
+      
+      pdf.setFontSize(6);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('MUNICIPALITY', sealX, sealY + flagHeight / 2 - 0.08, { align: 'center' });
+      pdf.text('OF', sealX, sealY + flagHeight / 2 - 0.03, { align: 'center' });
+      pdf.text('BONIFACIO', sealX, sealY + flagHeight / 2 + 0.02, { align: 'center' });
+      pdf.text('1955', sealX, sealY + flagHeight / 2 + 0.07, { align: 'center' });
+
+      // Disability symbol (blue circle with wheelchair icon)
+      const disabilityX = sealX - 0.35;
+      pdf.setFillColor(0, 0, 255);
+      pdf.circle(disabilityX, sealY + flagHeight / 2, 0.15, 'F');
+      pdf.setFillColor(255, 255, 255);
+      pdf.setFontSize(12);
+      pdf.text('♿', disabilityX, sealY + flagHeight / 2 + 0.02, { align: 'center' });
+
+      // ID Number
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(0, 0, 0);
+      pdf.text(memberId, cardWidth / 2, topSectionY + topSectionHeight + 0.15, { align: 'center' });
+
+      // Main content section
+      const mainContentY = topSectionY + topSectionHeight + 0.3;
+      const mainContentHeight = 0.9;
+
+      // Left column - Member information
+      const leftColumnX = margin + 0.15;
+      const leftColumnWidth = contentWidth * 0.65;
+
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('NAME', leftColumnX, mainContentY + 0.1);
+      
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(memberName.toUpperCase(), leftColumnX, mainContentY + 0.2);
+      pdf.setLineWidth(0.005);
+      pdf.line(leftColumnX, mainContentY + 0.22, leftColumnX + leftColumnWidth * 0.8, mainContentY + 0.22);
+
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('TYPE OF DISABILITY', leftColumnX, mainContentY + 0.35);
+      
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(disabilityType.toUpperCase(), leftColumnX, mainContentY + 0.45);
+      pdf.line(leftColumnX, mainContentY + 0.47, leftColumnX + leftColumnWidth * 0.8, mainContentY + 0.47);
+
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('SIGNATURE', leftColumnX, mainContentY + 0.6);
+      pdf.setLineWidth(0.01);
+      pdf.line(leftColumnX, mainContentY + 0.65, leftColumnX + leftColumnWidth * 0.6, mainContentY + 0.65);
+
+      // Right column - Photo and ID NO
+      const rightColumnX = leftColumnX + leftColumnWidth + 0.1;
+      const rightColumnWidth = contentWidth * 0.25;
+
+      // Photo placeholder
+      const photoX = rightColumnX;
+      const photoY = mainContentY;
+      const photoWidth = 0.6;
+      const photoHeight = 0.7;
+
+      pdf.setDrawColor(0, 0, 0);
+      pdf.setLineWidth(0.01);
+      pdf.rect(photoX, photoY, photoWidth, photoHeight);
+
+      // Try to load and add ID picture if available
+      if (idPictureUrl) {
+        try {
+          // Create an image element to load the picture
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.src = idPictureUrl;
+          
+          await new Promise((resolve, reject) => {
+            img.onload = () => {
+              try {
+                // Convert image to base64 and add to PDF
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                const imgData = canvas.toDataURL('image/jpeg', 0.8);
+                pdf.addImage(imgData, 'JPEG', photoX, photoY, photoWidth, photoHeight);
+                resolve();
+              } catch (error) {
+                console.error('Error adding image to PDF:', error);
+                pdf.setFontSize(7);
+                pdf.text('PHOTO', photoX + photoWidth / 2, photoY + photoHeight / 2, { align: 'center' });
+                resolve();
+              }
+            };
+            img.onerror = () => {
+              pdf.setFontSize(7);
+              pdf.text('PHOTO', photoX + photoWidth / 2, photoY + photoHeight / 2, { align: 'center' });
+              resolve();
+            };
+            // Timeout after 3 seconds
+            setTimeout(() => {
+              pdf.setFontSize(7);
+              pdf.text('PHOTO', photoX + photoWidth / 2, photoY + photoHeight / 2, { align: 'center' });
+              resolve();
+            }, 3000);
+          });
+        } catch (error) {
+          console.error('Error loading image:', error);
+          pdf.setFontSize(7);
+          pdf.text('PHOTO', photoX + photoWidth / 2, photoY + photoHeight / 2, { align: 'center' });
+        }
+      } else {
+        pdf.setFontSize(7);
+        pdf.text('PHOTO', photoX + photoWidth / 2, photoY + photoHeight / 2, { align: 'center' });
+      }
+
+      // ID NO field below photo
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('ID NO.', photoX + photoWidth / 2, photoY + photoHeight + 0.1, { align: 'center' });
+      pdf.setFontSize(8);
+      pdf.text(memberId, photoX + photoWidth / 2, photoY + photoHeight + 0.15, { align: 'center' });
+
+      // Footer
+      const footerY = cardHeight - margin - 0.15;
+      pdf.setFontSize(6);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('THE HOLDER OF THIS CARD IS A PERSON WITH DISABILITY AND IS ENTITLED TO ALL BENEFITS AND PRIVILEGES IN ACCORDANCE WITH REPUBLIC ACTS 9442 AND 19754. NON-TRANSFERABLE VALID FOR THREE (3) YEARS. ANY VIOLATION IS PUNISHABLE BY LAW. VALID ANYWHERE IN THE PHILIPPINES.', cardWidth / 2, footerY, { align: 'center', maxWidth: contentWidth - 0.2 });
+
+      // Save PDF
+      const fileName = `PWD_ID_Card_${memberName.replace(/\s+/g, '_')}_${memberId}.pdf`;
+      pdf.save(fileName);
+
+      showModal({
+        type: 'success',
+        title: 'PDF Generated Successfully',
+        message: `PWD ID Card PDF for ${memberName} has been generated and downloaded.`,
+        buttonText: 'OK'
+      });
+
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      showModal({
+        type: 'error',
+        title: 'Error Generating PDF',
+        message: 'Failed to generate PDF. Please try again.',
+        buttonText: 'OK'
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Handle card claim - show confirmation first
@@ -361,12 +700,23 @@ function PWDCard() {
     }
 
     const printWindow = window.open('', '_blank');
+    const memberName = selectedMemberData.name || `${selectedMemberData.firstName || ''} ${selectedMemberData.middleName || ''} ${selectedMemberData.lastName || ''}`.trim() || 'Unknown';
+    const memberId = selectedMemberData.pwd_id || selectedMemberData.id || `PWD-${selectedMemberData.userID || 'N/A'}`;
+    const disabilityType = selectedMemberData.disabilityType || selectedMemberData.typeOfDisability || 'NOT SPECIFIED';
+    const province = selectedMemberData.province || 'LAGUNA';
+    const cityMunicipality = selectedMemberData.cityMunicipality || selectedMemberData.city || 'CABUYAO';
+    
     const printContent = `
       <!DOCTYPE html>
       <html>
         <head>
-          <title>PWD ID Card - ${selectedMemberData.name}</title>
+          <title>PWD ID Card - ${memberName}</title>
           <style>
+            * {
+              margin: 0;
+              padding: 0;
+              box-sizing: border-box;
+            }
             body {
               font-family: Arial, sans-serif;
               margin: 0;
@@ -374,115 +724,293 @@ function PWDCard() {
               background: white;
             }
             .id-card {
-              width: 2in;
-              height: 3in;
+              width: 3.375in;
+              height: 2.125in;
               border: 2px solid #000;
               background: white;
               position: relative;
               margin: 0 auto;
               box-sizing: border-box;
-            }
-            .header {
-              text-align: center;
-              padding: 3px 0;
-              border-bottom: 1px solid #000;
-              font-size: 6px;
-              font-weight: bold;
-              line-height: 1.1;
-            }
-            .content {
               display: flex;
-              height: calc(100% - 20px);
+              flex-direction: column;
             }
-            .left-section {
-              flex: 1;
-              padding: 4px;
-              font-size: 5px;
-              line-height: 1.1;
+            .top-section {
+              display: flex;
+              align-items: center;
+              padding: 8px 12px;
+              border-bottom: 1px solid #000;
             }
-            .right-section {
+            .flag-section {
+              width: 60px;
+              height: 40px;
+              border: 1px solid #000;
+              position: relative;
+              margin-right: 12px;
+              flex-shrink: 0;
+              background: #FFFFFF;
+            }
+            .flag-triangle {
+              position: absolute;
+              left: 0;
+              top: 0;
+              width: 0;
+              height: 0;
+              border-style: solid;
+              border-width: 20px 0 20px 20px;
+              border-color: transparent transparent transparent #FFFFFF;
+              z-index: 1;
+            }
+            .flag-blue {
+              position: absolute;
+              top: 0;
+              left: 20px;
               width: 40px;
-              padding: 3px;
+              height: 20px;
+              background: #0038A8;
+            }
+            .flag-red {
+              position: absolute;
+              bottom: 0;
+              left: 20px;
+              width: 40px;
+              height: 20px;
+              background: #CE1126;
+            }
+            .flag-sun {
+              position: absolute;
+              left: 6px;
+              top: 50%;
+              transform: translateY(-50%);
+              width: 8px;
+              height: 8px;
+              background: #FCD116;
+              border-radius: 50%;
+              z-index: 2;
+            }
+            .flag-star {
+              position: absolute;
+              width: 3px;
+              height: 3px;
+              background: #FCD116;
+              clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+              z-index: 2;
+            }
+            .header-text {
+              flex: 1;
+              text-align: left;
+            }
+            .header-text h1 {
+              font-size: 11px;
+              font-weight: bold;
+              margin-bottom: 2px;
+              letter-spacing: 0.5px;
+            }
+            .header-text .province {
+              font-size: 9px;
+              margin-bottom: 2px;
+            }
+            .header-text .city {
+              font-size: 9px;
+              font-weight: bold;
+              text-transform: uppercase;
+            }
+            .seal-section {
+              width: 50px;
+              height: 50px;
+              border: 2px solid #000;
+              border-radius: 50%;
+              margin: 0 8px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              flex-shrink: 0;
+              background: white;
+              position: relative;
+            }
+            .seal-inner {
+              width: 40px;
+              height: 40px;
+              border: 1px solid #000;
+              border-radius: 50%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 6px;
+              text-align: center;
+              font-weight: bold;
+            }
+            .disability-symbol {
+              width: 30px;
+              height: 30px;
+              border: 2px solid #0000FF;
+              border-radius: 50%;
+              background: #0000FF;
+              margin: 0 8px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              flex-shrink: 0;
+            }
+            .disability-icon {
+              color: white;
+              font-size: 18px;
+              font-weight: bold;
+            }
+            .id-number {
+              font-size: 14px;
+              font-weight: bold;
+              margin: 4px 0;
+              text-align: center;
+            }
+            .main-content {
+              display: flex;
+              flex: 1;
+              padding: 8px 12px;
+            }
+            .left-column {
+              flex: 1;
+              padding-right: 12px;
+            }
+            .field-label {
+              font-size: 8px;
+              font-weight: bold;
+              margin-bottom: 2px;
+              text-transform: uppercase;
+            }
+            .field-value {
+              font-size: 10px;
+              font-weight: bold;
+              margin-bottom: 6px;
+              text-transform: uppercase;
+              text-decoration: underline;
+            }
+            .field-value.name {
+              font-size: 12px;
+            }
+            .field-value.disability {
+              font-size: 11px;
+            }
+            .signature-line {
+              margin-top: 8px;
+              border-top: 1px solid #000;
+              width: 100%;
+              height: 20px;
+            }
+            .right-column {
+              width: 80px;
               display: flex;
               flex-direction: column;
               align-items: center;
               justify-content: space-between;
+              padding-left: 12px;
               border-left: 1px solid #000;
             }
             .photo-placeholder {
-              width: 30px;
-              height: 30px;
-              border: 1px dashed #000;
+              width: 60px;
+              height: 70px;
+              border: 1px solid #000;
+              background: #F5F5F5;
               display: flex;
               align-items: center;
               justify-content: center;
-              font-size: 4px;
-              margin-bottom: 3px;
+              font-size: 7px;
+              text-align: center;
+              position: relative;
             }
-            .qr-code {
-              width: 30px;
-              height: 30px;
-              border: 1px solid #000;
-              margin-top: 3px;
+            .photo-placeholder img {
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
             }
+            .id-no-field {
+              margin-top: 8px;
+              text-align: center;
+            }
+            .id-no-label {
+              font-size: 7px;
+              font-weight: bold;
+              margin-top: 4px;
             }
             .footer {
-              position: absolute;
-              bottom: 3px;
-              left: 0;
-              right: 0;
+              padding: 6px 12px;
+              border-top: 1px solid #000;
               text-align: center;
-              font-size: 4px;
+              font-size: 6px;
               font-weight: bold;
-            }
-            .pdao-button {
-              background: #000;
-              color: white;
-              padding: 1px 4px;
-              font-size: 5px;
-              font-weight: bold;
-              margin: 1px 0;
-              border: none;
+              line-height: 1.3;
             }
             @media print {
-              body { margin: 0; }
-              .id-card { margin: 0; }
+              body { 
+                margin: 0; 
+                padding: 0;
+              }
+              .id-card { 
+                margin: 0;
+                page-break-inside: avoid;
+              }
             }
           </style>
         </head>
         <body>
           <div class="id-card">
-            <div class="header">
-              REPUBLIC OF THE PHILIPPINES<br>
-              PROVINCE OF LAGUNA<br>
-              CITY OF CABUYAO<br>
-              (P.D.A.O)
-            </div>
-            
-            <div class="content">
-              <div class="left-section">
-                <div class="pdao-button">CABUYAO PDAO</div>
-                <br>
-                <strong>NAME:</strong> ${selectedMemberData.name}<br>
-                <strong>ID NO.:</strong> ${selectedMemberData.id}<br>
-                <strong>TYPE OF DISABILITY:</strong> ${selectedMemberData.disabilityType}<br>
-                <br>
-                <strong>SIGNATURE:</strong> ________________
+            <div class="top-section">
+              <div class="flag-section">
+                <div class="flag-triangle"></div>
+                <div class="flag-blue"></div>
+                <div class="flag-red"></div>
+                <div class="flag-sun"></div>
+                <div class="flag-star" style="top: 4px; left: 4px;"></div>
+                <div class="flag-star" style="top: 4px; left: 8px;"></div>
+                <div class="flag-star" style="bottom: 4px; left: 4px;"></div>
               </div>
-              
-              <div class="right-section">
-                <div class="photo-placeholder">PHOTO</div>
-                <div class="qr-code">
-                  ${qrCodeDataURL ? `<img src="${qrCodeDataURL}" style="width: 100%; height: 100%;" />` : 'QR CODE'}
+              <div class="header-text">
+                <h1>REPUBLIC OF THE PHILIPPINES</h1>
+                <div class="province">Province of <span style="font-weight: bold;">${province}</span></div>
+                <div class="city">CITY/MUNICIPALITY OF ${cityMunicipality}</div>
+              </div>
+              <div class="seal-section">
+                <div class="seal-inner">
+                  MUNICIPALITY<br>OF<br>BONIFACIO<br>1955
+                </div>
+              </div>
+              <div class="disability-symbol">
+                <span class="disability-icon">♿</span>
+              </div>
+            </div>
+            <div class="id-number">${memberId}</div>
+            <div class="main-content">
+              <div class="left-column">
+                <div class="field-label">NAME</div>
+                <div class="field-value name">${memberName}</div>
+                <div class="field-label">TYPE OF DISABILITY</div>
+                <div class="field-value disability">${disabilityType}</div>
+                <div class="field-label">SIGNATURE</div>
+                <div class="signature-line"></div>
+              </div>
+              <div class="right-column">
+                <div class="photo-placeholder">
+                  ${idPictureUrl ? `<img src="${idPictureUrl}" alt="ID Picture" onerror="this.style.display='none'; this.parentElement.innerHTML='PHOTO';" />` : 'PHOTO'}
+                </div>
+                <div class="id-no-field">
+                  <div class="field-label">ID NO.</div>
+                  <div class="id-no-label">${memberId}</div>
                 </div>
               </div>
             </div>
-            
             <div class="footer">
-              VALID ANYWHERE IN THE PHILIPPINES
+              THE HOLDER OF THIS CARD IS A PERSON WITH DISABILITY AND IS ENTITLED TO ALL BENEFITS AND PRIVILEGES IN ACCORDANCE WITH REPUBLIC ACTS 9442 AND 19754. NON-TRANSFERABLE VALID FOR THREE (3) YEARS. ANY VIOLATION IS PUNISHABLE BY LAW. VALID ANYWHERE IN THE PHILIPPINES.
             </div>
           </div>
-          <script>window.onload = function(){ window.print(); window.close(); }</script>
+          <script>
+            window.onload = function(){ 
+              setTimeout(function() {
+                window.print(); 
+                setTimeout(function() {
+                  window.close();
+                }, 500);
+              }, 500);
+            }
+          </script>
         </body>
       </html>
     `;
@@ -1397,8 +1925,25 @@ function PWDCard() {
 
             {/* Right Panel - PWD Card Preview */}
             <Grid item xs={12} md={4}>
-              {/* Print Card Button */}
-              <Box sx={{ mb: 2, display: 'flex', justifyContent: 'center' }}>
+              {/* Print Card and Download PDF Buttons */}
+              <Box sx={{ mb: 2, display: 'flex', justifyContent: 'center', gap: 2 }}>
+                <Button
+                  variant="contained"
+                  startIcon={<DownloadIcon />}
+                  onClick={handleDownloadPDF}
+                  disabled={!selectedMemberData || loading}
+                  sx={{
+                    bgcolor: '#27AE60',
+                    '&:hover': { bgcolor: '#229954' },
+                    '&:disabled': { bgcolor: '#BDC3C7' },
+                    textTransform: 'none',
+                    fontWeight: 'bold',
+                    px: 3,
+                    py: 1
+                  }}
+                >
+                  {loading ? 'Generating...' : 'Download PDF'}
+                </Button>
                 <Button
                   variant="contained"
                   startIcon={<PrintIcon />}
@@ -1414,7 +1959,7 @@ function PWDCard() {
                     py: 1
                   }}
                 >
-                  Print PWD Card (2x3)
+                  Print PWD Card
                 </Button>
               </Box>
               
@@ -1601,42 +2146,11 @@ function PWDCard() {
                           position: 'relative'
                         }}>
                           {(() => {
-                            // Debug logging
-                            console.log('=== ID Picture Debug ===');
-                            console.log('Selected Member:', selectedMemberData?.firstName, selectedMemberData?.lastName);
-                            console.log('ID Pictures raw:', selectedMemberData?.idPictures);
-                            
-                            if (!selectedMemberData?.idPictures) {
-                              console.log('No ID pictures found');
-                              return null;
-                            }
-                            
-                            let imagePath = null;
-                            
-                            // Handle different data formats
-                            if (Array.isArray(selectedMemberData.idPictures)) {
-                              imagePath = selectedMemberData.idPictures[0];
-                              console.log('Array format - first image:', imagePath);
-                            } else if (typeof selectedMemberData.idPictures === 'string') {
-                              try {
-                                const parsed = JSON.parse(selectedMemberData.idPictures);
-                                if (Array.isArray(parsed) && parsed.length > 0) {
-                                  imagePath = parsed[0];
-                                  console.log('String format - parsed first image:', imagePath);
-                                }
-                              } catch (e) {
-                                console.error('Failed to parse idPictures string:', e);
-                                return null;
-                              }
-                            }
-                            
-                            if (imagePath) {
-                              const fullUrl = `http://127.0.0.1:8000/storage/${imagePath}`;
-                              console.log('Final image URL:', fullUrl);
-                              
+                            // First, try to use ID picture from member documents
+                            if (idPictureUrl) {
                               return (
                                 <img
-                                  src={fullUrl}
+                                  src={idPictureUrl}
                                   alt="ID Picture"
                                   style={{
                                     width: '100%',
@@ -1648,17 +2162,60 @@ function PWDCard() {
                                     left: 0
                                   }}
                                   onError={(e) => {
-                                    console.error('Image load error for:', fullUrl);
+                                    console.error('Image load error for member document ID picture:', idPictureUrl);
                                     e.target.style.display = 'none';
                                   }}
                                   onLoad={() => {
-                                    console.log('Image loaded successfully:', fullUrl);
+                                    console.log('ID picture loaded successfully from member documents:', idPictureUrl);
                                   }}
                                 />
                               );
                             }
                             
-                            console.log('No valid image path found');
+                            // Fallback: Try to use ID picture from member data (old method)
+                            if (selectedMemberData?.idPictures) {
+                              let imagePath = null;
+                              
+                              // Handle different data formats
+                              if (Array.isArray(selectedMemberData.idPictures)) {
+                                imagePath = selectedMemberData.idPictures[0];
+                              } else if (typeof selectedMemberData.idPictures === 'string') {
+                                try {
+                                  const parsed = JSON.parse(selectedMemberData.idPictures);
+                                  if (Array.isArray(parsed) && parsed.length > 0) {
+                                    imagePath = parsed[0];
+                                  }
+                                } catch (e) {
+                                  // Not a valid array, use as-is
+                                  imagePath = selectedMemberData.idPictures;
+                                }
+                              }
+                              
+                              if (imagePath) {
+                                const fullUrl = api.getStorageUrl(imagePath);
+                                return (
+                                  <img
+                                    src={fullUrl}
+                                    alt="ID Picture"
+                                    style={{
+                                      width: '100%',
+                                      height: '100%',
+                                      objectFit: 'cover',
+                                      borderRadius: '4px',
+                                      position: 'absolute',
+                                      top: 0,
+                                      left: 0
+                                    }}
+                                    onError={(e) => {
+                                      console.error('Image load error for member ID picture:', fullUrl);
+                                      e.target.style.display = 'none';
+                                    }}
+                                  />
+                                );
+                              }
+                            }
+                            
+                            // Final fallback: Show empty placeholder
                             return null;
                           })()}
                           

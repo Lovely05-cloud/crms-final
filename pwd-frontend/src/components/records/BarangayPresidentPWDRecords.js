@@ -103,6 +103,7 @@ function BarangayPresidentPWDRecords() {
   const [correctionModalOpen, setCorrectionModalOpen] = useState(false);
   const [selectedDocumentsForCorrection, setSelectedDocumentsForCorrection] = useState([]);
   const [correctionNotes, setCorrectionNotes] = useState('');
+  const [submittingCorrectionRequest, setSubmittingCorrectionRequest] = useState(false);
   const [documentTypes, setDocumentTypes] = useState([]);
   const [documentMapping, setDocumentMapping] = useState({});
   
@@ -299,8 +300,8 @@ function BarangayPresidentPWDRecords() {
     
     // Get the file URL using authenticated endpoint
     try {
-      // For idPictures arrays, pass the index parameter
-      const indexParam = (fileType === 'idPictures' || fileType.includes('idPicture')) ? fileIndex : null;
+      // idPictures is now a single file (standardized), no index parameter needed
+      const indexParam = null;
       const fileUrl = filePreviewService.getPreviewUrl('application-file', selectedApplication.applicationID, documentType, indexParam);
       
       // Check if it's an image file by checking the field name
@@ -420,21 +421,49 @@ function BarangayPresidentPWDRecords() {
   const approveDelayRef = React.useRef(null);
   const [approving, setApproving] = useState(false);
 
-  const handleApproveClick = (application) => {
+  const handleApproveClick = async (application) => {
     // Show application details modal
     setSelectedApplication(application);
     setViewDetailsOpen(true);
     setPendingAction('approve');
     
+    // Fetch fresh application data to ensure we have the latest document paths
+    try {
+      const response = await api.get(`/applications`);
+      if (response && Array.isArray(response)) {
+        const freshApplication = response.find(app => app.applicationID === application.applicationID);
+        if (freshApplication) {
+          setSelectedApplication(freshApplication);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching fresh application data:', error);
+      // Don't show error to user, just use the cached data
+    }
+    
     // Show toast notification
     toastService.info('Please review once more the application before proceeding.');
   };
 
-  const handleRejectClick = (application) => {
+  const handleRejectClick = async (application) => {
     // Show application details modal
     setSelectedApplication(application);
     setViewDetailsOpen(true);
     setPendingAction('reject');
+    
+    // Fetch fresh application data to ensure we have the latest document paths
+    try {
+      const response = await api.get(`/applications`);
+      if (response && Array.isArray(response)) {
+        const freshApplication = response.find(app => app.applicationID === application.applicationID);
+        if (freshApplication) {
+          setSelectedApplication(freshApplication);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching fresh application data:', error);
+      // Don't show error to user, just use the cached data
+    }
     
     // Show toast notification
     toastService.info('Please review once more the application before proceeding.');
@@ -457,7 +486,7 @@ function BarangayPresidentPWDRecords() {
 
       // Refresh the applications list
       await fetchData();
-      toastService.success('Application approved successfully!');
+      toastService.success('Application successfully endorsed!');
       
       // Close modal
       setViewDetailsOpen(false);
@@ -465,7 +494,7 @@ function BarangayPresidentPWDRecords() {
       setPendingAction(null);
     } catch (err) {
       console.error('Error approving application:', err);
-      toastService.error('Failed to approve application: ' + (err.message || 'Unknown error'));
+      toastService.error('Failed to endorse application: ' + (err.message || 'Unknown error'));
     } finally {
       if (approveDelayRef.current) {
         clearTimeout(approveDelayRef.current);
@@ -792,9 +821,24 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
   };
 
 
-  const handleViewDetails = (application) => {
+  const handleViewDetails = async (application) => {
+    // Set the application immediately for quick display
     setSelectedApplication(application);
     setViewDetailsOpen(true);
+    
+    // Fetch fresh application data to ensure we have the latest document paths
+    try {
+      const response = await api.get(`/applications`);
+      if (response && Array.isArray(response)) {
+        const freshApplication = response.find(app => app.applicationID === application.applicationID);
+        if (freshApplication) {
+          setSelectedApplication(freshApplication);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching fresh application data:', error);
+      // Don't show error to user, just use the cached data
+    }
   };
 
   const handleCloseDetails = () => {
@@ -848,6 +892,8 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
     }
 
     try {
+      setSubmittingCorrectionRequest(true);
+      
       // Debug: Log the data being sent
       const requestData = {
         applicationId: String(selectedApplication.applicationID),
@@ -868,6 +914,8 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
     } catch (error) {
       console.error('Error submitting correction request:', error);
       toastService.error('Failed to send correction request. Please try again.');
+    } finally {
+      setSubmittingCorrectionRequest(false);
     }
   };
 
@@ -1587,7 +1635,7 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
                                       }
                                     }}
                                   >
-                                    Approve
+                                    Endorse
                                   </Button>
                                   <Button
                                     variant="outlined"
@@ -2019,17 +2067,19 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
                                 }
                                 
                                 if (Array.isArray(parsedFiles)) {
-                                  // Handle multiple files (like idPictures)
+                                  // Handle arrays (backward compatibility for old idPictures data)
+                                  // For idPictures, now only show first file (standardized to single file)
+                                  const filesToShow = fieldName === 'idPictures' ? parsedFiles.slice(0, 1) : parsedFiles.slice(0, 2);
                                   return (
                                     <Box sx={{ display: 'flex', gap: 0.5 }}>
-                                      {parsedFiles.slice(0, 2).map((file, index) => {
+                                      {filesToShow.map((file, index) => {
                                         // Always use authenticated URL for thumbnails
                                         let singleFileUrl = null;
                                         const fileType = getFileTypeFromFieldName(fieldName);
                                         if (fileType && selectedApplication.applicationID) {
                                           try {
-                                            // Pass index for idPictures arrays
-                                            singleFileUrl = filePreviewService.getPreviewUrl('application-file', selectedApplication.applicationID, fileType, index);
+                                            // idPictures is now single file, no index needed (backward compatibility: old data might be array)
+                                            singleFileUrl = filePreviewService.getPreviewUrl('application-file', selectedApplication.applicationID, fileType, null);
                                           } catch (error) {
                                             console.warn('Error getting authenticated URL for array file:', error);
                                           }
@@ -2299,7 +2349,7 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
                     }
                   }}
                 >
-                  Approve
+                  Endorse
                 </Button>
               ) : (
                 <>
@@ -2331,7 +2381,7 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
                       }
                     }}
                   >
-                    Approve
+                    Endorse
                   </Button>
                 </>
               )}
@@ -2414,7 +2464,10 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <Box sx={{ 
                         width: 20, 
-                        height: 20, 
+                        height: 20,
+                        minWidth: 20,
+                        minHeight: 20,
+                        flexShrink: 0,
                         border: '2px solid #0b87ac', 
                         borderRadius: '50%',
                         display: 'flex',
@@ -2495,16 +2548,28 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
           <Button
             onClick={handleSubmitCorrectionRequest}
             variant="contained"
+            disabled={submittingCorrectionRequest}
             sx={{
-              bgcolor: '#F39C12',
+              bgcolor: submittingCorrectionRequest ? '#BDC3C7' : '#F39C12',
               textTransform: 'none',
               fontWeight: 600,
               '&:hover': {
-                bgcolor: '#E67E22'
+                bgcolor: submittingCorrectionRequest ? '#BDC3C7' : '#E67E22'
+              },
+              '&:disabled': {
+                bgcolor: '#BDC3C7',
+                color: '#FFFFFF'
               }
             }}
           >
-            Send Correction Request
+            {submittingCorrectionRequest ? (
+              <>
+                <CircularProgress size={16} sx={{ mr: 1, color: '#FFFFFF' }} />
+                Sending...
+              </>
+            ) : (
+              'Send Correction Request'
+            )}
           </Button>
         </DialogActions>
          </Dialog>
@@ -2517,11 +2582,11 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
         fullWidth
       >
         <DialogTitle sx={{ bgcolor: '#27AE60', color: '#FFFFFF', fontWeight: 'bold' }}>
-          Confirm Approval
+          Confirm Endorsement
         </DialogTitle>
         <DialogContent sx={{ mt: 2 }}>
           <Typography variant="body1">
-            Are you sure you want to approve this application? This action cannot be undone.
+            Are you sure you want to endorse this application? This action cannot be undone.
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
@@ -2548,7 +2613,7 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
               }
             }}
           >
-            Confirm Approval
+            Confirm Endorsement
           </Button>
         </DialogActions>
       </Dialog>

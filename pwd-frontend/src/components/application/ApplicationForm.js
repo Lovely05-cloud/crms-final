@@ -60,8 +60,8 @@ const steps = [
   'Documents'
 ];
 
-// Maximum file size: 2MB
-const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB in bytes
+// Maximum file size: 15MB
+const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB in bytes
 
 function ApplicationForm() {
   const navigate = useNavigate();
@@ -179,6 +179,34 @@ function ApplicationForm() {
 
   // Initialize form data from localStorage or default values
   const getInitialFormData = () => {
+    // Default form data structure
+    const defaultFormData = {
+      firstName: '',
+      lastName: '',
+      middleName: '',
+      suffix: '',
+      dateOfBirth: '',
+      gender: '',
+      civilStatus: '',
+      nationality: '',
+      disabilityType: '',
+      disabilityCause: '',
+      disabilityDate: '',
+      address: '',
+      barangay: '',
+      city: 'Cabuyao', // Hardcoded
+      province: 'Laguna', // Hardcoded
+      postalCode: '4025', // Hardcoded
+      phoneNumber: '',
+      email: '',
+      confirmEmail: '',
+      emergencyContact: '',
+      emergencyPhone: '',
+      emergencyRelationship: '',
+      // Document fields - will be populated dynamically
+      documents: {}
+    };
+
     const savedData = localStorage.getItem('pwd_application_form');
     if (savedData) {
       try {
@@ -187,36 +215,39 @@ function ApplicationForm() {
         if (!parsedData.documents || typeof parsedData.documents !== 'object') {
           parsedData.documents = {};
         }
-        return parsedData;
+        // Merge with defaults to ensure all fields are defined (not undefined)
+        return {
+          ...defaultFormData,
+          ...parsedData,
+          // Ensure all string fields are strings, not undefined
+          firstName: parsedData.firstName ?? '',
+          lastName: parsedData.lastName ?? '',
+          middleName: parsedData.middleName ?? '',
+          suffix: parsedData.suffix ?? '',
+          dateOfBirth: parsedData.dateOfBirth ?? '',
+          gender: parsedData.gender ?? '',
+          civilStatus: parsedData.civilStatus ?? '',
+          nationality: parsedData.nationality ?? '',
+          disabilityType: parsedData.disabilityType ?? '',
+          disabilityCause: parsedData.disabilityCause ?? '',
+          disabilityDate: parsedData.disabilityDate ?? '',
+          address: parsedData.address ?? '',
+          barangay: parsedData.barangay ?? '',
+          city: parsedData.city ?? 'Cabuyao',
+          province: parsedData.province ?? 'Laguna',
+          postalCode: parsedData.postalCode ?? '4025',
+          phoneNumber: parsedData.phoneNumber ?? '',
+          email: parsedData.email ?? '',
+          confirmEmail: parsedData.confirmEmail ?? '',
+          emergencyContact: parsedData.emergencyContact ?? '',
+          emergencyPhone: parsedData.emergencyPhone ?? '',
+          emergencyRelationship: parsedData.emergencyRelationship ?? '',
+        };
       } catch (error) {
         console.error('Error parsing saved form data:', error);
       }
     }
-    return {
-    firstName: '',
-    lastName: '',
-    middleName: '',
-    suffix: '',
-    dateOfBirth: '',
-    gender: '',
-    civilStatus: '',
-    nationality: '',
-    disabilityType: '',
-    disabilityCause: '',
-    disabilityDate: '',
-    address: '',
-    barangay: '',
-    city: 'Cabuyao', // Hardcoded
-    province: 'Laguna', // Hardcoded
-    postalCode: '4025', // Hardcoded
-    phoneNumber: '',
-    email: '',
-    emergencyContact: '',
-    emergencyPhone: '',
-    emergencyRelationship: '',
-    // Document fields - will be populated dynamically
-    documents: {}
-    };
+    return defaultFormData;
   };
 
   const [formData, setFormData] = useState(getInitialFormData);
@@ -328,12 +359,12 @@ function ApplicationForm() {
       return;
     }
 
-    // Validate file size (2MB limit)
+    // Validate file size (15MB limit)
     if (file.size > MAX_FILE_SIZE) {
       const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
       setFileErrors(prev => ({
         ...prev,
-        [field]: `File size (${fileSizeMB}MB) exceeds the maximum limit of 2MB. Please select a smaller file.`
+        [field]: `File size (${fileSizeMB}MB) exceeds the maximum limit of 15MB. Please select a smaller file.`
       }));
       return;
     }
@@ -661,7 +692,7 @@ function ApplicationForm() {
           const file = formData.documents[key];
           if (file && file.size > MAX_FILE_SIZE) {
             const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
-            fileSizeErrors[key] = `File size (${fileSizeMB}MB) exceeds the maximum limit of 2MB.`;
+            fileSizeErrors[key] = `File size (${fileSizeMB}MB) exceeds the maximum limit of 15MB.`;
           }
         });
         
@@ -670,7 +701,7 @@ function ApplicationForm() {
           showModal({
             type: 'error',
             title: 'File Size Error',
-            message: 'One or more files exceed the 2MB size limit. Please compress or select smaller files.',
+            message: 'One or more files exceed the 15MB size limit. Please compress or select smaller files.',
             buttonText: 'OK'
           });
           setSubmitting(false);
@@ -764,8 +795,8 @@ function ApplicationForm() {
         } else if (name.includes('voter')) {
           formDataToSend.append('voterCertificate', file);
         } else if ((name.includes('id') && name.includes('picture')) || name.includes('1"x1"') || name.includes('1\"x1\"')) {
-          // Backend accepts idPicture_0 / idPicture_1; map at least one
-          if (!formDataToSend.has('idPicture_0')) formDataToSend.append('idPicture_0', file);
+          // Send idPictures as single file (standardized to match other documents)
+          formDataToSend.append('idPictures', file);
         } else if (name.includes('birth')) {
           formDataToSend.append('birthCertificate', file);
         } else if (name.includes('whole') && name.includes('body')) {
@@ -991,7 +1022,7 @@ function ApplicationForm() {
                 <TextField
                   fullWidth
                   label="First Name"
-                  value={formData.firstName}
+                  value={formData.firstName ?? ''}
                   onChange={(e) => handleInputChange('firstName', e.target.value)}
                   error={!!errors.firstName}
                   helperText={errors.firstName}
@@ -1006,7 +1037,7 @@ function ApplicationForm() {
                 <TextField
                   fullWidth
                   label="Last Name"
-                  value={formData.lastName}
+                  value={formData.lastName ?? ''}
                   onChange={(e) => handleInputChange('lastName', e.target.value)}
                   error={!!errors.lastName}
                   helperText={errors.lastName}
@@ -1021,7 +1052,7 @@ function ApplicationForm() {
                 <FormControl fullWidth sx={getSelectStyles()}>
                   <InputLabel shrink>Suffix</InputLabel>
                   <Select
-                    value={formData.suffix}
+                    value={formData.suffix ?? ''}
                     onChange={(e) => handleInputChange('suffix', e.target.value)}
                     label="Suffix"
                     displayEmpty
@@ -1064,7 +1095,7 @@ function ApplicationForm() {
                  <TextField
                    fullWidth
                    label="Middle Name"
-                   value={formData.middleName}
+                   value={formData.middleName ?? ''}
                    onChange={(e) => handleInputChange('middleName', e.target.value)}
                    InputLabelProps={{
                      shrink: true,
@@ -1080,7 +1111,7 @@ function ApplicationForm() {
                  <TextField
                    fullWidth
                    label="Phone Number"
-                   value={formData.phoneNumber}
+                   value={formData.phoneNumber ?? ''}
                    onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
                    error={!!errors.phoneNumber || !!duplicateErrors.phoneNumber}
                    helperText={errors.phoneNumber || duplicateErrors.phoneNumber}
@@ -1096,7 +1127,7 @@ function ApplicationForm() {
                    fullWidth
                    label="Email Address"
                    type="email"
-                   value={formData.email}
+                   value={formData.email ?? ''}
                    onChange={(e) => handleInputChange('email', e.target.value)}
                    error={!!errors.email || !!duplicateErrors.email}
                    helperText={errors.email || duplicateErrors.email}
@@ -1112,7 +1143,7 @@ function ApplicationForm() {
                    fullWidth
                    label="Confirm Email Address"
                    type="email"
-                   value={formData.confirmEmail}
+                   value={formData.confirmEmail ?? ''}
                    onChange={(e) => handleInputChange('confirmEmail', e.target.value)}
                    error={!!errors.confirmEmail}
                    helperText={errors.confirmEmail}
@@ -1128,7 +1159,7 @@ function ApplicationForm() {
                    fullWidth
                    type="date"
                    label="Date of Birth"
-                   value={formData.dateOfBirth}
+                   value={formData.dateOfBirth ?? ''}
                    onChange={(e) => handleInputChange('dateOfBirth', e.target.value)}
                    InputLabelProps={{ shrink: true }}
                    error={!!errors.dateOfBirth}
@@ -1160,7 +1191,7 @@ function ApplicationForm() {
                      Gender
                    </InputLabel>
                    <Select
-                     value={formData.gender}
+                     value={formData.gender ?? ''}
                      onChange={(e) => handleInputChange('gender', e.target.value)}
                      sx={getSelectStyles(!!errors.gender)}
                      MenuProps={{
@@ -1217,7 +1248,7 @@ function ApplicationForm() {
                       Civil Status
                     </InputLabel>
                     <Select
-                      value={formData.civilStatus}
+                      value={formData.civilStatus ?? ''}
                       onChange={(e) => handleInputChange('civilStatus', e.target.value)}
                       sx={getSelectStyles()}
                       MenuProps={{
@@ -1256,7 +1287,7 @@ function ApplicationForm() {
                   <TextField
                     fullWidth
                     label="Nationality"
-                    value={formData.nationality}
+                    value={formData.nationality ?? ''}
                     onChange={(e) => handleInputChange('nationality', e.target.value)}
                     InputLabelProps={{
                       shrink: true,
@@ -1297,7 +1328,7 @@ function ApplicationForm() {
                    <TextField
                      fullWidth
                      label="Guardian Name"
-                     value={formData.emergencyContact}
+                     value={formData.emergencyContact ?? ''}
                      onChange={(e) => handleInputChange('emergencyContact', e.target.value)}
                      error={!!errors.emergencyContact}
                      helperText={errors.emergencyContact}
@@ -1312,7 +1343,7 @@ function ApplicationForm() {
                    <TextField
                      fullWidth
                      label="Guardian Phone Number"
-                     value={formData.emergencyPhone}
+                     value={formData.emergencyPhone ?? ''}
                      onChange={(e) => handleInputChange('emergencyPhone', e.target.value)}
                      error={!!errors.emergencyPhone}
                      helperText={errors.emergencyPhone || "Contact number of guardian/emergency contact"}
@@ -1342,7 +1373,7 @@ function ApplicationForm() {
                        Relationship to Guardian
                      </InputLabel>
                      <Select
-                       value={formData.emergencyRelationship}
+                       value={formData.emergencyRelationship ?? ''}
                        onChange={(e) => handleInputChange('emergencyRelationship', e.target.value)}
                        sx={getSelectStyles(!!errors.emergencyRelationship)}
                        MenuProps={{
@@ -1407,7 +1438,7 @@ function ApplicationForm() {
                 <TextField
                   fullWidth
                   label="Home Number/Street"
-                  value={formData.address}
+                  value={formData.address ?? ''}
                   onChange={(e) => handleInputChange('address', e.target.value)}
                   multiline
                   rows={3}
@@ -1439,7 +1470,7 @@ function ApplicationForm() {
                      Barangay
                    </InputLabel>
                    <Select
-                     value={formData.barangay}
+                     value={formData.barangay ?? ''}
                      onChange={(e) => handleInputChange('barangay', e.target.value)}
                      sx={getSelectStyles()}
                      MenuProps={{
@@ -1523,7 +1554,7 @@ function ApplicationForm() {
                     Type of Disability
                   </InputLabel>
                   <Select
-                    value={formData.disabilityType}
+                    value={formData.disabilityType ?? ''}
                     onChange={(e) => handleInputChange('disabilityType', e.target.value)}
                     sx={getSelectStyles(!!errors.disabilityType)}
                     MenuProps={{
@@ -1576,7 +1607,7 @@ function ApplicationForm() {
                  <TextField
                    fullWidth
                    label="Cause of Disability"
-                   value={formData.disabilityCause}
+                   value={formData.disabilityCause ?? ''}
                    onChange={(e) => handleInputChange('disabilityCause', e.target.value)}
                    multiline
                    rows={3}
@@ -1591,7 +1622,7 @@ function ApplicationForm() {
                    fullWidth
                    type="date"
                    label="Date of Disability Onset"
-                   value={formData.disabilityDate}
+                   value={formData.disabilityDate ?? ''}
                    onChange={(e) => handleInputChange('disabilityDate', e.target.value)}
                    InputLabelProps={{ shrink: true }}
                    error={!!errors.disabilityDate}
@@ -1633,7 +1664,7 @@ function ApplicationForm() {
               </Typography>
               <Typography variant="body2">
                 • Allowed formats: PDF, JPG, JPEG, PNG<br/>
-                • Maximum file size: 2MB per document<br/>
+                • Maximum file size: 15MB per document<br/>
                 • Upload clear, readable copies of your documents
               </Typography>
             </Alert>

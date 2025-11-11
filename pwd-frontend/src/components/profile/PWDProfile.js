@@ -61,6 +61,7 @@ function PWDProfile() {
   const [passwordErrorDialog, setPasswordErrorDialog] = useState(false);
   const [passwordErrorMessage, setPasswordErrorMessage] = useState('');
   const [qrCodeDataURL, setQrCodeDataURL] = useState('');
+  const [idPictureUrl, setIdPictureUrl] = useState(null);
   
   // Form states
   const [formData, setFormData] = useState({
@@ -86,6 +87,7 @@ function PWDProfile() {
     
     fetchProfile();
     refreshUserData(); // Refresh user data to get latest idPictures
+    fetchIdPictureFromDocuments(); // Fetch ID picture from member documents
   }, [announcePageChange, t]);
 
   // Generate QR code when profile loads
@@ -94,6 +96,60 @@ function PWDProfile() {
       generateQRCode();
     }
   }, [profile]);
+
+  // Fetch ID picture from member documents
+  const fetchIdPictureFromDocuments = async () => {
+    try {
+      console.log('Fetching ID picture from member documents...');
+      const response = await api.get('/documents/my-documents');
+      
+      if (response && response.success && response.documents) {
+        // Find the "ID Pictures" document
+        const idPicturesDoc = response.documents.find(doc => 
+          doc.name === 'ID Pictures' || doc.name === 'ID Picture'
+        );
+        
+        if (idPicturesDoc && idPicturesDoc.member_documents && idPicturesDoc.member_documents.length > 0) {
+          // Get the most recent member document
+          const memberDoc = idPicturesDoc.member_documents[0];
+          
+          if (memberDoc.id) {
+            // Use the document-file API endpoint to get the authenticated URL
+            const fileUrl = api.getFilePreviewUrl('document-file', memberDoc.id);
+            
+            // Add authentication token if available
+            const token = localStorage.getItem('auth.token');
+            if (token) {
+              try {
+                const tokenData = JSON.parse(token);
+                const tokenValue = typeof tokenData === 'string' ? tokenData : tokenData.token;
+                if (tokenValue) {
+                  const separator = fileUrl.includes('?') ? '&' : '?';
+                  const finalUrl = `${fileUrl}${separator}token=${tokenValue}`;
+                  setIdPictureUrl(finalUrl);
+                  console.log('ID picture URL set from member documents:', finalUrl);
+                  return;
+                }
+              } catch (error) {
+                console.warn('Error parsing auth token:', error);
+              }
+            }
+            
+            setIdPictureUrl(fileUrl);
+            console.log('ID picture URL set from member documents:', fileUrl);
+          } else {
+            console.log('Member document has no ID, cannot fetch file');
+          }
+        } else {
+          console.log('No ID Pictures document found in member documents');
+        }
+      } else {
+        console.log('No documents found or invalid response');
+      }
+    } catch (error) {
+      console.error('Error fetching ID picture from member documents:', error);
+    }
+  };
 
   // Refresh user data from login endpoint to get updated idPictures
   const refreshUserData = async () => {
@@ -415,28 +471,28 @@ function PWDProfile() {
 
         {/* Help Guide for Profile */}
         <HelpGuide
-          title="How to Manage Your Profile"
+          title={t('guide.profile.title')}
           type="info"
           steps={[
             {
-              title: "Viewing Your Profile",
-              description: "Your profile shows your personal information, contact details, and PWD ID. The QR code can be scanned to verify your identity at PDAO offices."
+              title: t('guide.profile.steps.viewing.title'),
+              description: t('guide.profile.steps.viewing.description')
             },
             {
-              title: "Editing Your Information",
-              description: "Click the 'Edit Profile' button to update your personal information. You can change your contact number, address, and other details. Make sure all information is accurate before saving."
+              title: t('guide.profile.steps.editing.title'),
+              description: t('guide.profile.steps.editing.description')
             },
             {
-              title: "Changing Your Password",
-              description: "Click the 'Change Password' button to update your password. You'll need to enter your current password and then your new password twice to confirm it. Make sure your new password is at least 6 characters long."
+              title: t('guide.profile.steps.changingPassword.title'),
+              description: t('guide.profile.steps.changingPassword.description')
             },
             {
-              title: "Saving Changes",
-              description: "After making changes, click 'Save' to update your profile. A success message will appear confirming your changes were saved. You can also click 'Cancel' to discard any changes you made."
+              title: t('guide.profile.steps.saving.title'),
+              description: t('guide.profile.steps.saving.description')
             },
             {
-              title: "Important Notes",
-              description: "Some information like your name, birth date, and disability type may require special approval to change. If you need to update these, please contact support through the Support Desk."
+              title: t('guide.profile.steps.importantNotes.title'),
+              description: t('guide.profile.steps.importantNotes.description')
             }
           ]}
         />
@@ -904,83 +960,11 @@ label={t('profile.birthDate')}
                         mx: 'auto' // Center the square container
                       }}>
                         {(() => {
-                          // Debug logging
-                          console.log('=== User Profile ID Picture Debug ===');
-                          console.log('Profile data:', profile);
-                          console.log('ID Pictures:', profile?.idPictures);
-                          
-                          if (!profile?.idPictures) {
-                            console.log('No ID pictures found in profile');
-                            return (
-                              <>
-                                {/* X lines */}
-                                <Box sx={{ 
-                                  position: 'absolute',
-                                  width: '100%',
-                                  height: '100%',
-                                  '&::before': {
-                                    content: '""',
-                                    position: 'absolute',
-                                    top: '50%',
-                                    left: '15%',
-                                    right: '15%',
-                                    height: '3px',
-                                    bgcolor: '#bbb',
-                                    transform: 'rotate(45deg)'
-                                  },
-                                  '&::after': {
-                                    content: '""',
-                                    position: 'absolute',
-                                    top: '50%',
-                                    left: '15%',
-                                    right: '15%',
-                                    height: '3px',
-                                    bgcolor: '#bbb',
-                                    transform: 'rotate(-45deg)'
-                                  }
-                                }} />
-                                {/* Avatar as fallback */}
-                                <Avatar
-                                  sx={{
-                                    width: 85,
-                                    height: 85,
-                                    bgcolor: '#1976d2',
-                                    fontSize: '1.6rem',
-                                    zIndex: 1,
-                                    boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
-                                  }}
-                                >
-                                  {getInitials(formData.firstName, formData.lastName)}
-                                </Avatar>
-                              </>
-                            );
-                          }
-                          
-                          let imagePath = null;
-                          
-                          // Handle different data formats
-                          if (Array.isArray(profile.idPictures)) {
-                            imagePath = profile.idPictures[0];
-                            console.log('Array format - first image:', imagePath);
-                          } else if (typeof profile.idPictures === 'string') {
-                            try {
-                              const parsed = JSON.parse(profile.idPictures);
-                              if (Array.isArray(parsed) && parsed.length > 0) {
-                                imagePath = parsed[0];
-                                console.log('String format - parsed first image:', imagePath);
-                              }
-                            } catch (e) {
-                              console.error('Failed to parse idPictures string:', e);
-                            }
-                          }
-                          
-                          if (imagePath) {
-                            const fullUrl = `http://192.168.18.25:8000/storage/${imagePath}`;
-                            console.log('Final image URL:', fullUrl);
-                            
+                          // First, try to use ID picture from member documents
+                          if (idPictureUrl) {
                             return (
                               <img
-                                src={fullUrl}
+                                src={idPictureUrl}
                                 alt="ID Picture"
                                 style={{
                                   width: '100%',
@@ -992,20 +976,103 @@ label={t('profile.birthDate')}
                                   left: 0
                                 }}
                                 onError={(e) => {
-                                  console.error('Image load error for:', fullUrl);
+                                  console.error('Image load error for member document ID picture:', idPictureUrl);
                                   e.target.style.display = 'none';
-                                  // Show fallback avatar
-                                  e.target.nextSibling.style.display = 'flex';
                                 }}
                                 onLoad={() => {
-                                  console.log('Image loaded successfully:', fullUrl);
+                                  console.log('ID picture loaded successfully from member documents:', idPictureUrl);
                                 }}
                               />
                             );
                           }
                           
-                          console.log('No valid image path found');
-                          return null;
+                          // Fallback: Try to use ID picture from profile (old method)
+                          if (profile?.idPictures) {
+                            let imagePath = null;
+                            
+                            // Handle different data formats
+                            if (Array.isArray(profile.idPictures)) {
+                              imagePath = profile.idPictures[0];
+                            } else if (typeof profile.idPictures === 'string') {
+                              try {
+                                const parsed = JSON.parse(profile.idPictures);
+                                if (Array.isArray(parsed) && parsed.length > 0) {
+                                  imagePath = parsed[0];
+                                }
+                              } catch (e) {
+                                // Not a valid array, use as-is
+                                imagePath = profile.idPictures;
+                              }
+                            }
+                            
+                            if (imagePath) {
+                              const fullUrl = api.getStorageUrl(imagePath);
+                              return (
+                                <img
+                                  src={fullUrl}
+                                  alt="ID Picture"
+                                  style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    objectFit: 'cover',
+                                    borderRadius: '4px',
+                                    position: 'absolute',
+                                    top: 0,
+                                    left: 0
+                                  }}
+                                  onError={(e) => {
+                                    console.error('Image load error for profile ID picture:', fullUrl);
+                                    e.target.style.display = 'none';
+                                  }}
+                                />
+                              );
+                            }
+                          }
+                          
+                          // Final fallback: Show placeholder with avatar
+                          return (
+                            <>
+                              {/* X lines */}
+                              <Box sx={{ 
+                                position: 'absolute',
+                                width: '100%',
+                                height: '100%',
+                                '&::before': {
+                                  content: '""',
+                                  position: 'absolute',
+                                  top: '50%',
+                                  left: '15%',
+                                  right: '15%',
+                                  height: '3px',
+                                  bgcolor: '#bbb',
+                                  transform: 'rotate(45deg)'
+                                },
+                                '&::after': {
+                                  content: '""',
+                                  position: 'absolute',
+                                  top: '50%',
+                                  left: '15%',
+                                  right: '15%',
+                                  height: '3px',
+                                  bgcolor: '#bbb',
+                                  transform: 'rotate(-45deg)'
+                                }
+                              }} />
+                              {/* Avatar as fallback */}
+                              <Avatar
+                                sx={{
+                                  width: 85,
+                                  height: 85,
+                                  bgcolor: '#1976d2',
+                                  fontSize: '1.6rem',
+                                  zIndex: 1,
+                                  boxShadow: '0 2px 8px rgba(0,0,0,0.2)'
+                                }}
+                              >
+                                {getInitials(formData.firstName, formData.lastName)}
+                              </Avatar>
+                            </>
+                          );
                         })()}
                         
                         {/* Fallback Avatar (hidden by default) */}

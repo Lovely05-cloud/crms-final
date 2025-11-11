@@ -27,22 +27,57 @@ const openDB = () => {
 // Save file to IndexedDB
 export const saveFileToStorage = async (fileId, file) => {
   try {
-    const db = await openDB();
-    const transaction = db.transaction([STORE_NAME], 'readwrite');
-    const store = transaction.objectStore(STORE_NAME);
-
+    // Step 1: Convert file to base64 BEFORE opening transaction
+    // This ensures no async operations happen during the transaction
     const fileData = await convertFileToBase64(file);
     
-    await store.put({
+    // Step 2: Open database connection
+    const db = await openDB();
+    
+    // Step 3: Prepare data object BEFORE opening transaction
+    const dataToStore = {
       id: fileId,
       fileData: fileData,
       fileName: file.name,
       fileSize: file.size,
       fileType: file.type,
       lastModified: file.lastModified
-    });
+    };
+    
+    // Step 4: Open transaction and perform put operation immediately
+    // CRITICAL: No async operations between transaction open and put
+    const transaction = db.transaction([STORE_NAME], 'readwrite');
+    const store = transaction.objectStore(STORE_NAME);
 
-    return true;
+    // Step 5: Perform put operation synchronously (no await between transaction and put)
+    const result = await new Promise((resolve, reject) => {
+      // Set up transaction error handlers FIRST
+      transaction.onerror = (event) => {
+        const error = event.target.error || transaction.error;
+        console.error('Transaction error:', error);
+        reject(error);
+      };
+
+      transaction.onabort = () => {
+        reject(new Error('Transaction was aborted'));
+      };
+
+      // Make the put request immediately
+      const request = store.put(dataToStore);
+
+      request.onsuccess = () => {
+        // Request succeeded - transaction will complete automatically
+        resolve(true);
+      };
+
+      request.onerror = (event) => {
+        const error = event.target.error || request.error;
+        console.error('Error saving file to IndexedDB:', error);
+        reject(error);
+      };
+    });
+    
+    return result;
   } catch (error) {
     console.error('Error saving file to IndexedDB:', error);
     return false;
@@ -80,8 +115,24 @@ export const removeFileFromStorage = async (fileId) => {
     const db = await openDB();
     const transaction = db.transaction([STORE_NAME], 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
-    await store.delete(fileId);
-    return true;
+    
+    return new Promise((resolve, reject) => {
+      const request = store.delete(fileId);
+      
+      request.onsuccess = () => {
+        resolve(true);
+      };
+      
+      request.onerror = () => {
+        console.error('Error removing file from IndexedDB:', request.error);
+        reject(request.error);
+      };
+      
+      transaction.onerror = () => {
+        console.error('Transaction error:', transaction.error);
+        reject(transaction.error);
+      };
+    });
   } catch (error) {
     console.error('Error removing file from IndexedDB:', error);
     return false;
@@ -94,8 +145,24 @@ export const clearAllFilesFromStorage = async () => {
     const db = await openDB();
     const transaction = db.transaction([STORE_NAME], 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
-    await store.clear();
-    return true;
+    
+    return new Promise((resolve, reject) => {
+      const request = store.clear();
+      
+      request.onsuccess = () => {
+        resolve(true);
+      };
+      
+      request.onerror = () => {
+        console.error('Error clearing all files from IndexedDB:', request.error);
+        reject(request.error);
+      };
+      
+      transaction.onerror = () => {
+        console.error('Transaction error:', transaction.error);
+        reject(transaction.error);
+      };
+    });
   } catch (error) {
     console.error('Error clearing all files from IndexedDB:', error);
     return false;

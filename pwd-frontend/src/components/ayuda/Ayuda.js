@@ -81,6 +81,7 @@ const Ayuda = () => {
   const [eligibleMembers, setEligibleMembers] = useState([]);
   const [loadingEligibleMembers, setLoadingEligibleMembers] = useState(false);
   const [generatingPDF, setGeneratingPDF] = useState(false);
+  const [approvingSchedule, setApprovingSchedule] = useState(false);
 
   // Format date as MM/DD/YYYY
   const formatDateMMDDYYYY = (dateString) => {
@@ -529,6 +530,10 @@ const Ayuda = () => {
 
     if (selectedPendingSchedule) {
       try {
+        console.log('Starting approval process...');
+        setApprovingSchedule(true);
+        console.log('Loading state set to true');
+        
         // Create the approved benefit in the database
         const approvedBenefitData = {
           ...selectedPendingSchedule,
@@ -537,8 +542,10 @@ const Ayuda = () => {
           approvedDate: new Date().toISOString()
         };
 
+        console.log('Creating benefit in database...');
         // Save to database
         const savedBenefit = await benefitService.create(approvedBenefitData);
+        console.log('Benefit created successfully:', savedBenefit);
         
         // Add to active benefits with the database ID
         const approvedBenefit = {
@@ -571,10 +578,16 @@ const Ayuda = () => {
         setApprovalFile(null);
         
         toastService.success('Benefit program approved and saved to database successfully!');
+        console.log('Approval process completed successfully');
       } catch (error) {
         console.error('Error approving schedule:', error);
         toastService.error('Failed to approve benefit program: ' + (error.message || 'Unknown error'));
+      } finally {
+        console.log('Resetting loading state');
+        setApprovingSchedule(false);
       }
+    } else {
+      console.warn('No selectedPendingSchedule found');
     }
   };
 
@@ -2709,7 +2722,7 @@ const Ayuda = () => {
             <Button 
               onClick={handleApproveSchedule} 
               variant="contained"
-              disabled={!approvalFile}
+              disabled={!approvalFile || approvingSchedule}
               sx={{ 
                 textTransform: 'none',
                 fontWeight: 600,
@@ -2717,9 +2730,9 @@ const Ayuda = () => {
                 py: 1.5,
                 borderRadius: 2,
                 fontSize: '1rem',
-                bgcolor: '#27AE60',
+                bgcolor: approvingSchedule ? '#BDC3C7' : '#27AE60',
                 '&:hover': { 
-                  bgcolor: '#229954' 
+                  bgcolor: approvingSchedule ? '#BDC3C7' : '#229954' 
                 },
                 '&:disabled': {
                   bgcolor: '#BDC3C7',
@@ -2727,7 +2740,14 @@ const Ayuda = () => {
                 }
               }}
             >
-              Approve Program
+              {approvingSchedule ? (
+                <>
+                  <CircularProgress size={16} sx={{ mr: 1, color: '#FFFFFF' }} />
+                  Approving...
+                </>
+              ) : (
+                'Approve Program'
+              )}
             </Button>
           </DialogActions>
         </Dialog>

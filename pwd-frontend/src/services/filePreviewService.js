@@ -103,6 +103,9 @@ class FilePreviewService {
         params.push(`index=${index}`);
       }
       
+      // Add cache-busting parameter to force fresh file loads (important for document corrections)
+      params.push(`t=${Date.now()}`);
+      
       if (params.length > 0) {
         const separator = url.includes('?') ? '&' : '?';
         finalUrl = `${url}${separator}${params.join('&')}`;

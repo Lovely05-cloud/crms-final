@@ -15,10 +15,12 @@ class ApplicationValidationService
     {
         $duplicates = [];
         
-        // Check email duplicates
-        $emailDuplicate = $this->checkEmailDuplicate($data['email'], $excludeApplicationId);
-        if ($emailDuplicate) {
-            $duplicates['email'] = $emailDuplicate;
+        // Check email duplicates (only if email is provided)
+        if (isset($data['email']) && !empty($data['email'])) {
+            $emailDuplicate = $this->checkEmailDuplicate($data['email'], $excludeApplicationId);
+            if ($emailDuplicate) {
+                $duplicates['email'] = $emailDuplicate;
+            }
         }
         
         // Check phone number duplicates (accept either key from request)
@@ -240,8 +242,7 @@ class ApplicationValidationService
             'medicalCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
             'clinicalAbstract' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
             'voterCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
-            'idPictures' => 'nullable|array',
-            'idPictures.*' => 'file|mimes:jpeg,png,jpg|max:2048',
+            'idPictures' => 'nullable|file|mimes:jpeg,png,jpg|max:15360', // Changed to single file (standardized)
             'birthCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
             'wholeBodyPicture' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
             'affidavit' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',

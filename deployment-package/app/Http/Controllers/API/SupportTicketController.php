@@ -150,12 +150,15 @@ class SupportTicketController extends Controller
                 return response()->json(['error' => 'PWD Member not found'], 404);
             }
 
+            // Automatically determine priority based on content analysis
+            $priority = $this->determinePriority($request->subject, $request->description, $request->category);
+
             $ticket = SupportTicket::create([
                 'ticket_number' => SupportTicket::generateTicketNumber(),
                 'subject' => $request->subject,
                 'description' => $request->description,
                 'pwd_member_id' => $pwdMember->id,
-                'priority' => $request->priority ?? 'medium',
+                'priority' => $priority,
                 'category' => $request->category,
                 'status' => 'open'
             ]);
@@ -190,6 +193,93 @@ class SupportTicketController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => 'Failed to create ticket'], 500);
         }
+    }
+
+    /**
+     * Automatically determine ticket priority based on content analysis.
+     * 
+     * Priority Determination Criteria:
+     * - URGENT: Contains urgent keywords (urgent, emergency, critical, asap, immediately, broken, down, not working)
+     * - HIGH: Contains important keywords (important, as soon as possible, soon) OR category is "Technical Issue" or "Account Issue"
+     * - MEDIUM: Default priority for most tickets (general inquiries, feedback, document requests)
+     * - LOW: Contains low-priority keywords (question, inquiry, general, suggestion) OR category is "General Inquiry" or "Feedback"
+     * 
+     * @param string $subject The ticket subject
+     * @param string $description The ticket description
+     * @param string|null $category The ticket category
+     * @return string The determined priority level (urgent, high, medium, low)
+     */
+    private function determinePriority($subject, $description, $category = null)
+    {
+        // Combine subject and description for analysis (case-insensitive)
+        $content = strtolower($subject . ' ' . $description);
+        $categoryLower = $category ? strtolower($category) : '';
+
+        // URGENT: Check for urgent keywords
+        $urgentKeywords = ['urgent', 'emergency', 'critical', 'asap', 'as soon as possible', 'immediately', 
+                          'right now', 'broken', 'down', 'not working', 'cannot access', 'blocked', 
+                          'error', 'failed', 'crash', 'hacked', 'security breach'];
+        foreach ($urgentKeywords as $keyword) {
+            if (strpos($content, $keyword) !== false) {
+                \Illuminate\Support\Facades\Log::info('Ticket priority determined as URGENT', [
+                    'keyword' => $keyword,
+                    'subject' => $subject
+                ]);
+                return 'urgent';
+            }
+        }
+
+        // HIGH: Check for important keywords or specific categories
+        $highKeywords = ['important', 'as soon as possible', 'soon', 'need help', 'assistance needed'];
+        $highCategories = ['technical issue', 'account issue', 'payment issue', 'document issue'];
+        
+        foreach ($highKeywords as $keyword) {
+            if (strpos($content, $keyword) !== false) {
+                \Illuminate\Support\Facades\Log::info('Ticket priority determined as HIGH', [
+                    'keyword' => $keyword,
+                    'subject' => $subject
+                ]);
+                return 'high';
+            }
+        }
+        
+        if (in_array($categoryLower, $highCategories)) {
+            \Illuminate\Support\Facades\Log::info('Ticket priority determined as HIGH', [
+                'category' => $category,
+                'subject' => $subject
+            ]);
+            return 'high';
+        }
+
+        // LOW: Check for low-priority keywords or specific categories
+        $lowKeywords = ['question', 'inquiry', 'general question', 'just wondering', 'suggestion', 
+                       'feedback', 'compliment', 'thank you', 'appreciation'];
+        $lowCategories = ['general inquiry', 'feedback', 'suggestion', 'compliment'];
+        
+        foreach ($lowKeywords as $keyword) {
+            if (strpos($content, $keyword) !== false) {
+                \Illuminate\Support\Facades\Log::info('Ticket priority determined as LOW', [
+                    'keyword' => $keyword,
+                    'subject' => $subject
+                ]);
+                return 'low';
+            }
+        }
+        
+        if (in_array($categoryLower, $lowCategories)) {
+            \Illuminate\Support\Facades\Log::info('Ticket priority determined as LOW', [
+                'category' => $category,
+                'subject' => $subject
+            ]);
+            return 'low';
+        }
+
+        // MEDIUM: Default priority for all other tickets
+        \Illuminate\Support\Facades\Log::info('Ticket priority determined as MEDIUM (default)', [
+            'subject' => $subject,
+            'category' => $category
+        ]);
+        return 'medium';
     }
 
     /**

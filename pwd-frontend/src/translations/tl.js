@@ -49,7 +49,9 @@ export const tl = {
     upload: 'I-upload',
     download: 'I-download',
     refresh: 'I-refresh',
-    tryAgain: 'Subukan Muli'
+    tryAgain: 'Subukan Muli',
+    optional: 'Opsyonal',
+    submitting: 'Ipinapadala...'
   },
   buttons: {
     viewSupportTickets: 'Tingnan ang Mga Support Ticket',
@@ -119,6 +121,7 @@ export const tl = {
     applicationStatus: 'Status ng Application',
     memberSince: 'Kasapi Mula Noong',
     latestAnnouncements: 'Pinakabagong Mga Anunsyo',
+    announcements: 'Mga Anunsyo',
     supportDesk: 'Support Desk',
     supportDescription: 'Kailangan ng tulong? Narito ang aming support team para tumulong sa inyong mga katanungan o alalahanin.',
     createSupportTicket: 'Gumawa ng Support Ticket',
@@ -151,6 +154,85 @@ export const tl = {
         help: {
           title: 'Karagdagang Tulong',
           description: "Kung kailangan ng tulong, i-click ang 'Gumawa ng Bagong Ticket' o pumunta sa Support Desk. Tutulungan ka ng aming staff."
+        }
+      }
+    },
+    support: {
+      title: 'Paano Gamitin ang Support Desk',
+      steps: {
+        creating: {
+          title: 'Paglikha ng Support Ticket',
+          description: "I-click ang button na 'Gumawa ng Bagong Ticket'. Punan ang subject (maikling buod ng inyong isyu), category, at detalyadong paglalarawan. Mag-attach ng mga file kung kailangan (tulad ng mga dokumento o screenshots). I-click ang 'Ipasa' para ipadala ang inyong ticket."
+        },
+        viewing: {
+          title: 'Pagtingin ng Inyong Mga Ticket',
+          description: 'Nakalista sa ibaba ang lahat ng inyong ticket. Ipinapakita ng active tickets ang kasalukuyang mga pag-uusap. I-click ang anumang ticket para makita ang kasaysayan ng pag-uusap at tumugon sa mga mensahe mula sa staff.'
+        },
+        replying: {
+          title: 'Pagtugon sa Mga Ticket',
+          description: "Buksan ang isang ticket para makita ang lahat ng mensahe. I-type ang inyong tugon sa message box sa ibaba. Maaari kayong mag-attach ng mga file kung kailangan. I-click ang 'Ipadala' para tumugon. Tugon ng staff at makikita ninyo ang kanilang mga mensahe."
+        },
+        status: {
+          title: 'Pag-unawa sa Status ng Ticket',
+          description: "Ipinapakita ng status: 'BAGO' (kakagawa lang), 'NAGHIHINTAY NG SAGOT' (kailangan ng inyong tugon), 'GINAGAWA' (ginagawa ng staff), o 'NARESOLBA' (natapos). Ang mga resolved ticket ay lilipat sa archived section."
+        },
+        attaching: {
+          title: 'Pag-attach ng Mga File',
+          description: 'Maaari kayong mag-attach ng mga file tulad ng dokumento, larawan, o PDF sa inyong mga ticket. I-click ang attachment icon, piliin ang inyong file, o i-drag at drop ito. Tumutulong ito sa staff na maintindihan ang inyong isyu nang mas mabuti.'
+        },
+        gettingHelp: {
+          title: 'Pagkuha ng Tulong',
+          description: 'Kung nahihirapan kayo sa paggamit ng support desk, maaari kayong makipag-ugnayan sa PDAO nang direkta sa pamamagitan ng telepono o bisitahin ang opisina. Available ang staff para tumulong sa parehong technical issues at general questions.'
+        }
+      }
+    },
+    profile: {
+      title: 'Paano Pamahalaan ang Inyong Profile',
+      steps: {
+        viewing: {
+          title: 'Pagtingin ng Inyong Profile',
+          description: 'Ipinapakita ng inyong profile ang inyong personal na impormasyon, contact details, at PWD ID. Maaaring i-scan ang QR code para i-verify ang inyong pagkakakilanlan sa mga opisina ng PDAO.'
+        },
+        editing: {
+          title: 'Pag-edit ng Inyong Impormasyon',
+          description: "I-click ang button na 'I-edit ang Profile' para i-update ang inyong personal na impormasyon. Maaari ninyong baguhin ang inyong contact number, address, at iba pang detalye. Siguraduhing tumpak ang lahat ng impormasyon bago i-save."
+        },
+        changingPassword: {
+          title: 'Pagpapalit ng Inyong Password',
+          description: "I-click ang button na 'Palitan ang Password' para i-update ang inyong password. Kailangan ninyong i-enter ang inyong kasalukuyang password at pagkatapos ang inyong bagong password nang dalawang beses para kumpirmahin ito. Siguraduhing hindi bababa sa 6 na character ang inyong bagong password."
+        },
+        saving: {
+          title: 'Pag-save ng Mga Pagbabago',
+          description: "Pagkatapos gumawa ng mga pagbabago, i-click ang 'I-save' para i-update ang inyong profile. Lilitaw ang success message na nagkokumpirma na na-save ang inyong mga pagbabago. Maaari din ninyong i-click ang 'Kanselahin' para itapon ang anumang pagbabago na ginawa ninyo."
+        },
+        importantNotes: {
+          title: 'Mahahalagang Tala',
+          description: 'Ang ilang impormasyon tulad ng inyong pangalan, petsa ng kapanganakan, at uri ng disability ay maaaring mangailangan ng espesyal na approval para baguhin. Kung kailangan ninyong i-update ang mga ito, mangyaring makipag-ugnayan sa support sa pamamagitan ng Support Desk.'
+        }
+      }
+    },
+    documents: {
+      title: 'Paano Mag-upload ng Mga Dokumento',
+      steps: {
+        understanding: {
+          title: 'Pag-unawa sa Mga Kinakailangan sa Dokumento',
+          description: 'Ipinapakita ng bawat document card ang pangalan ng dokumento, kung ito ay kinakailangan o opsyonal, tinatanggap na mga uri ng file (PDF, JPG, PNG), at pinakamalaking laki ng file. Dapat ma-upload ang mga kinakailangang dokumento para maproseso ang inyong application.'
+        },
+        uploading: {
+          title: 'Pag-upload ng Dokumento',
+          description: 'I-click ang button na \'I-upload ang Dokumento\' sa document card. Piliin ang file mula sa inyong device. Siguraduhing tumugma ang file sa kinakailangang format at laki. Maghintay hanggang matapos ang upload - makikita ninyo ang success message.'
+        },
+        checkingStatus: {
+          title: 'Pag-check ng Status ng Dokumento',
+          description: 'Pagkatapos mag-upload, ipapakita ng mga dokumento ang status: \'Naghihintay\' (naghihintay ng review), \'Naaprubahan\' (tinanggap), o \'Tinanggihan\' (kailangan ng correction). Makakatanggap kayo ng notifications tungkol sa mga pagbabago sa status ng dokumento.'
+        },
+        viewingReplacing: {
+          title: 'Pagtingin o Pagpalit ng Mga Dokumento',
+          description: 'I-click ang \'Tingnan\' para makita ang inyong na-upload na dokumento. I-click ang \'Palitan\' para mag-upload ng bagong bersyon kung kailangan. Maaari din ninyong i-check ang upload date at anumang notes mula sa reviewers.'
+        },
+        ifRejected: {
+          title: 'Kung Tinanggihan ang Inyong Dokumento',
+          description: 'Kung tinanggihan ang isang dokumento, tingnan ang notes section para sa mga detalye tungkol sa kung ano ang kailangang i-correct. Mag-upload ng corrected version sa pamamagitan ng pag-click sa \'Palitan\'. Maaari din kayong makipag-ugnayan sa support para sa tulong.'
         }
       }
     }
@@ -194,7 +276,20 @@ export const tl = {
     technical: 'Teknikal',
     general: 'Pangkalahatan',
     billing: 'Billing',
-    other: 'Iba pa'
+    other: 'Iba pa',
+    createAndManage: 'Gumawa at pamahalaan ang inyong mga support ticket',
+    totalTickets: 'Kabuuang Mga Ticket',
+    waitingFor: 'Naghihintay',
+    activeTickets: 'Aktibong Mga Ticket',
+    archive: 'Archive',
+    reply: 'Tumugon',
+    typeYourReply: 'I-type ang inyong tugon...',
+    dropFileHere: 'I-drop ang file dito...',
+    readyToSend: 'handa nang ipadala',
+    chooseFile: 'Pumili ng File',
+    fileFormats: 'PDF, DOC, DOCX, TXT, JPG, JPEG, PNG, GIF (Max 10MB)',
+    noTickets: 'Walang nahanap na ticket',
+    noTicketsDescription: 'Wala pa kayong gumawa ng anumang support ticket. I-click ang "Gumawa ng Support Ticket" para magsimula.'
   },
 
   // Profile
@@ -238,6 +333,7 @@ export const tl = {
     download: 'I-download',
     view: 'Tingnan',
     delete: 'Tanggalin',
+    replace: 'Palitan',
     medicalCertificate: 'Medical Certificate',
     birthCertificate: 'Birth Certificate',
     validId: 'Valid ID',
@@ -247,6 +343,31 @@ export const tl = {
     uploadSuccess: 'Matagumpay na na-upload ang dokumento',
     uploadFailed: 'Nabigo ang pag-upload ng dokumento',
     deleteSuccess: 'Matagumpay na natanggal ang dokumento',
-    deleteFailed: 'Nabigo ang pagtanggal ng dokumento'
+    deleteFailed: 'Nabigo ang pagtanggal ng dokumento',
+    required: 'Kinakailangan',
+    fileTypes: 'Mga uri ng file',
+    maxSize: 'Pinakamalaking laki',
+    notes: 'Mga tala',
+    noDescription: 'Walang paglalarawan na ibinigay',
+    documentPreview: 'Preview ng Dokumento',
+    preview: 'Preview',
+    howToUpload: 'Paano Mag-upload ng Mga Dokumento',
+    understandingRequirements: 'Pag-unawa sa Mga Kinakailangan sa Dokumento',
+    understandingRequirementsDesc: 'Ipinapakita ng bawat document card ang pangalan ng dokumento, kung ito ay kinakailangan o opsyonal, tinatanggap na mga uri ng file (PDF, JPG, PNG), at pinakamalaking laki ng file. Dapat ma-upload ang mga kinakailangang dokumento para maproseso ang inyong application.',
+    uploadingDocument: 'Pag-upload ng Dokumento',
+    uploadingDocumentDesc: 'I-click ang button na \'I-upload ang Dokumento\' sa document card. Piliin ang file mula sa inyong device. Siguraduhing tumugma ang file sa kinakailangang format at laki. Maghintay hanggang matapos ang upload - makikita ninyo ang success message.',
+    checkingStatus: 'Pag-check ng Status ng Dokumento',
+    checkingStatusDesc: 'Pagkatapos mag-upload, ipapakita ng mga dokumento ang status: \'Naghihintay\' (naghihintay ng review), \'Naaprubahan\' (tinanggap), o \'Tinanggihan\' (kailangan ng correction). Makakatanggap kayo ng notifications tungkol sa mga pagbabago sa status ng dokumento.',
+    viewingReplacing: 'Pagtingin o Pagpalit ng Mga Dokumento',
+    viewingReplacingDesc: 'I-click ang \'Tingnan\' para makita ang inyong na-upload na dokumento. I-click ang \'Palitan\' para mag-upload ng bagong bersyon kung kailangan. Maaari din ninyong i-check ang upload date at anumang notes mula sa reviewers.',
+    ifRejected: 'Kung Tinanggihan ang Inyong Dokumento',
+    ifRejectedDesc: 'Kung tinanggihan ang isang dokumento, tingnan ang notes section para sa mga detalye tungkol sa kung ano ang kailangang i-correct. Mag-upload ng corrected version sa pamamagitan ng pag-click sa \'Palitan\'. Maaari din kayong makipag-ugnayan sa support para sa tulong.',
+    newDocumentRequirements: 'Mga Bagong Kinakailangan sa Dokumento',
+    selectFile: 'Pumili ng File',
+    selected: 'Napili',
+    size: 'Laki',
+    missing: 'Nawawala',
+    approved: 'Naaprubahan',
+    rejected: 'Tinanggihan'
   }
 };

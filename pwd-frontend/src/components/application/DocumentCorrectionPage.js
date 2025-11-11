@@ -32,8 +32,8 @@ import {
 } from '@mui/icons-material';
 import { api } from '../../services/api';
 
-// Maximum file size: 2MB
-const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB in bytes
+// Maximum file size: 15MB
+const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB in bytes
 
 const DocumentCorrectionPage = () => {
   const { token } = useParams();
@@ -56,7 +56,7 @@ const DocumentCorrectionPage = () => {
     medicalCertificate: 'Medical Certificate',
     clinicalAbstract: 'Clinical Abstract/Assessment',
     voterCertificate: 'Voter Certificate',
-    idPictures: 'ID Pictures (2pcs)',
+    idPictures: 'ID Pictures (1pc)',
     birthCertificate: 'Birth Certificate',
     wholeBodyPicture: 'Whole Body Picture',
     affidavit: 'Affidavit of Guardianship/Loss',
@@ -71,9 +71,9 @@ const DocumentCorrectionPage = () => {
     try {
       setLoading(true);
       console.log('Fetching correction request for token:', token);
-      console.log('API Base URL:', 'http://127.0.0.1:8000/api');
       
-      const response = await api.get(`/applications/correction-request/${token}`);
+      // Make request without authentication since this is a public token-based endpoint
+      const response = await api.get(`/applications/correction-request/${token}`, { auth: false });
       
       console.log('API Response:', response);
       console.log('Response type:', typeof response);
@@ -110,7 +110,18 @@ const DocumentCorrectionPage = () => {
       console.error('Error message:', err.message);
       console.error('Error status:', err.status);
       console.error('Error data:', err.data);
-      setError('Failed to load correction request. Please check your link.');
+      console.error('Full error:', err);
+      
+      // Provide more specific error messages
+      if (err.status === 404) {
+        setError(err.data?.message || 'Invalid, expired, or completed correction request. Please contact support if you believe this is an error.');
+      } else if (err.status === 500) {
+        setError(err.data?.message || 'Server error occurred. Please try again later or contact support.');
+      } else if (err.message && err.message.includes('Failed to fetch')) {
+        setError('Unable to connect to the server. Please check your internet connection and try again.');
+      } else {
+        setError(err.data?.message || err.message || 'Failed to load correction request. Please check your link.');
+      }
     } finally {
       setLoading(false);
     }
@@ -140,14 +151,14 @@ const DocumentCorrectionPage = () => {
       return;
     }
 
-    // Validate file size (2MB limit)
+    // Validate file size (15MB limit)
     if (file.size > MAX_FILE_SIZE) {
       const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
       setFileErrors(prev => ({
         ...prev,
-        [documentType]: `File size (${fileSizeMB}MB) exceeds the maximum limit of 2MB. Please select a smaller file.`
+        [documentType]: `File size (${fileSizeMB}MB) exceeds the maximum limit of 15MB. Please select a smaller file.`
       }));
-      setError(`File "${file.name}" is too large. Maximum file size is 2MB.`);
+      setError(`File "${file.name}" is too large. Maximum file size is 15MB.`);
       return;
     }
 
@@ -197,9 +208,9 @@ const DocumentCorrectionPage = () => {
       const fileSizeMB = (oversizedFiles[0].size / (1024 * 1024)).toFixed(2);
       setFileErrors(prev => ({
         ...prev,
-        [documentType]: `${oversizedFiles.length} file(s) exceed the 2MB limit. Largest file: ${fileSizeMB}MB. Please select smaller files.`
+        [documentType]: `${oversizedFiles.length} file(s) exceed the 15MB limit. Largest file: ${fileSizeMB}MB. Please select smaller files.`
       }));
-      setError(`One or more files are too large. Maximum file size is 2MB per file.`);
+      setError(`One or more files are too large. Maximum file size is 15MB per file.`);
       return;
     }
 
@@ -234,19 +245,19 @@ const DocumentCorrectionPage = () => {
           file.forEach((f, index) => {
             if (f && f.size > MAX_FILE_SIZE) {
               const fileSizeMB = (f.size / (1024 * 1024)).toFixed(2);
-              fileSizeErrors[`${docType}_${index}`] = `File size (${fileSizeMB}MB) exceeds the maximum limit of 2MB.`;
+              fileSizeErrors[`${docType}_${index}`] = `File size (${fileSizeMB}MB) exceeds the maximum limit of 15MB.`;
             }
           });
         } else if (file.size > MAX_FILE_SIZE) {
           const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
-          fileSizeErrors[docType] = `File size (${fileSizeMB}MB) exceeds the maximum limit of 2MB.`;
+          fileSizeErrors[docType] = `File size (${fileSizeMB}MB) exceeds the maximum limit of 15MB.`;
         }
       }
     });
 
     if (Object.keys(fileSizeErrors).length > 0) {
       setFileErrors(fileSizeErrors);
-      setError('One or more files exceed the 2MB size limit. Please compress or select smaller files.');
+      setError('One or more files exceed the 15MB size limit. Please compress or select smaller files.');
       return;
     }
 
@@ -258,26 +269,23 @@ const DocumentCorrectionPage = () => {
       const formData = new FormData();
       formData.append('correction_token', token);
       
-      // Add uploaded files
+      // Add uploaded files (all documents including idPictures are now single files)
       Object.entries(uploadedFiles).forEach(([docType, file]) => {
         if (file) {
-          // Handle idPictures as array (multiple files)
-          if (docType === 'idPictures' && Array.isArray(file)) {
-            file.forEach((singleFile, index) => {
-              formData.append(`idPictures[${index}]`, singleFile);
-            });
-          } else if (docType === 'idPictures' && !Array.isArray(file)) {
-            // If idPictures is a single file, convert to array
-            formData.append('idPictures[0]', file);
-          } else {
-            // Single file for other document types
+          // Handle both array (backward compatibility) and single file
+          if (Array.isArray(file) && file.length > 0) {
+            // If it's an array, take the first file (for backward compatibility)
+            formData.append(docType, file[0]);
+          } else if (file) {
+            // Single file for all document types
             formData.append(docType, file);
           }
         }
       });
 
       // Don't set Content-Type manually - browser will set it with boundary automatically
-      const response = await api.post('/applications/submit-corrections', formData);
+      // Make request without authentication since this is a public token-based endpoint
+      const response = await api.post('/applications/submit-corrections', formData, { auth: false });
 
       console.log('Submit corrections response:', response);
       
@@ -299,6 +307,10 @@ const DocumentCorrectionPage = () => {
           .map(([field, messages]) => `${field}: ${Array.isArray(messages) ? messages.join(', ') : messages}`)
           .join('\n');
         setError(`Validation errors:\n${errorMessages}`);
+      } else if (err.status === 408 || (err.message && err.message.includes('timed out'))) {
+        setError('Upload timed out. Your connection may be slow or the files are too large. Please try again with a better connection or compress your files.');
+      } else if (err.status === 0 || (err.message && err.message.includes('Failed to fetch'))) {
+        setError('Network error. Please check your internet connection and try again. If the problem persists, try using Wi-Fi instead of mobile data.');
       } else {
         setError(err.data?.message || err.message || 'Failed to submit corrections. Please try again.');
       }
@@ -316,10 +328,12 @@ const DocumentCorrectionPage = () => {
     
     return Array.isArray(documentsToCorrect) && documentsToCorrect.every(docType => {
       const file = uploadedFiles[docType];
-      if (docType === 'idPictures') {
-        // For idPictures, check if it's an array with at least one file
-        return Array.isArray(file) && file.length > 0;
+      // All documents including idPictures are now single files (standardized)
+      // Support backward compatibility: if it's an array (old format), check if it has files
+      if (Array.isArray(file)) {
+        return file.length > 0;
       }
+      // Single file (new format)
       return file !== null && file !== undefined;
     });
   };
@@ -630,13 +644,13 @@ const DocumentCorrectionPage = () => {
                           style={{ display: 'none' }}
                           id={`file-upload-${docType}`}
                           type="file"
-                          multiple={docType === 'idPictures'}
+                          multiple={false}
                           onChange={(e) => {
                             if (docType === 'idPictures') {
-                              // Handle multiple files for ID pictures
-                              const files = Array.from(e.target.files).slice(0, 2); // Max 2 files
-                              if (files.length > 0) {
-                                handleMultipleFileUpload(docType, files);
+                              // Handle single file for ID picture
+                              const file = e.target.files[0];
+                              if (file) {
+                                handleFileUpload(docType, file);
                               }
                             } else {
                               // Single file for other document types
@@ -661,13 +675,13 @@ const DocumentCorrectionPage = () => {
                               }
                             }}
                           >
-                            {docType === 'idPictures' ? 'Choose Files (2 max)' : 'Choose File'}
+                            Choose File
                           </Button>
                         </label>
                         <Typography variant="caption" sx={{ display: 'block', mt: 1, color: (validationErrors[docType] || fileErrors[docType]) ? '#e74c3c' : '#7f8c8d' }}>
                           {docType === 'idPictures' 
-                            ? 'Accepted formats: JPG, JPEG, PNG (Max 2 files, 2MB each)'
-                            : 'Accepted formats: PDF, JPG, JPEG, PNG (Max 2MB)'}
+                            ? 'Accepted formats: JPG, JPEG, PNG (Max 1 file, 15MB)'
+                            : 'Accepted formats: PDF, JPG, JPEG, PNG (Max 15MB)'}
                         </Typography>
                         {fileErrors[docType] && (
                           <Alert severity="error" sx={{ mt: 0.5, py: 0.5 }}>

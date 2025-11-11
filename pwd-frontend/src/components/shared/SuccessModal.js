@@ -128,13 +128,24 @@ const SuccessModal = ({
         </Box>
         
         <Box sx={{ p: 3 }}>
-          <Typography variant="body1" sx={{ 
-            color: '#2c3e50', 
-            mb: 3,
-            lineHeight: 1.6
-          }}>
-            {typeof message === 'string' ? message : message}
-          </Typography>
+          {typeof message === 'string' ? (
+            <Typography variant="body1" sx={{ 
+              color: '#2c3e50', 
+              mb: 3,
+              lineHeight: 1.6
+            }}>
+              {message}
+            </Typography>
+          ) : (
+            <Box sx={{ 
+              color: '#2c3e50', 
+              mb: 3,
+              lineHeight: 1.6,
+              fontSize: '1rem'
+            }}>
+              {message}
+            </Box>
+          )}
           
           {requireCheckbox && (
             <Box sx={{ mb: 3, display: 'flex', justifyContent: 'center' }}>

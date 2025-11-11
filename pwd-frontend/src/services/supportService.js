@@ -54,12 +54,13 @@ export const supportService = {
   },
   
   // Create a new support ticket (PWD members only)
+  // Priority is automatically determined by the backend based on content analysis
   createTicket: async (ticketData, file = null) => {
     try {
       const formData = new FormData();
       formData.append('subject', ticketData.subject);
       formData.append('description', ticketData.description);
-      formData.append('priority', ticketData.priority || 'medium');
+      // Priority is no longer sent - backend will determine it automatically
       formData.append('category', ticketData.category || 'General');
       
       if (file) {

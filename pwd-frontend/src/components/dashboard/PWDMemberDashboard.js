@@ -119,6 +119,14 @@ function PWDMemberDashboard() {
         // Use announcementService to get filtered announcements
         const filteredAnnouncements = await announcementService.getFilteredForPWDMember(userBarangay);
         
+        console.log('Dashboard - Filtered announcements count:', filteredAnnouncements.length);
+        console.log('Dashboard - Filtered announcements:', filteredAnnouncements.map(a => ({ 
+          id: a.id, 
+          title: a.title, 
+          status: a.status, 
+          targetAudience: a.targetAudience 
+        })));
+        
         // Fetch support tickets for this user
         const ticketsResponse = await api.get('/support-tickets');
         const ticketsData = ticketsResponse || [];
@@ -155,7 +163,8 @@ function PWDMemberDashboard() {
           setMemberSinceDate(currentUser?.created_at);
         }
         
-        setAnnouncements(filteredAnnouncements.slice(0, 3));
+        console.log('Dashboard - Setting announcements state with count:', filteredAnnouncements.length);
+        setAnnouncements(filteredAnnouncements);
         setSupportTickets(userTickets);
         
       } catch (error) {
@@ -205,7 +214,8 @@ function PWDMemberDashboard() {
           setClaimedBenefits(0);
         }
         
-        setAnnouncements(filteredAnnouncements.slice(0, 3));
+        console.log('Dashboard Refresh - Filtered announcements count:', filteredAnnouncements.length);
+        setAnnouncements(filteredAnnouncements);
         setSupportTickets(userTickets);
         
         console.log('Dashboard data refreshed automatically');
@@ -216,6 +226,16 @@ function PWDMemberDashboard() {
 
     return () => clearInterval(interval);
   }, [currentUser]);
+
+  // Debug: Log when announcements state changes
+  useEffect(() => {
+    console.log('Dashboard - Announcements state changed. Count:', announcements.length);
+    console.log('Dashboard - Announcements:', announcements.map(a => ({ 
+      id: a.id, 
+      title: a.title, 
+      status: a.status 
+    })));
+  }, [announcements]);
 
   if (loading) {
     return (
@@ -443,20 +463,49 @@ function PWDMemberDashboard() {
 
 
           {/* Announcements Section - Full Width */}
-          <Card sx={{ ...cardStyles, minHeight: 600 }}>
-            <CardContent sx={{ p: 3 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
+          <Card sx={{ ...cardStyles, minHeight: 600, maxHeight: 'calc(100vh - 200px)', display: 'flex', flexDirection: 'column' }}>
+            <CardContent sx={{ p: 3, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3, flexShrink: 0 }}>
                 <Campaign sx={{ color: '#F39C12', fontSize: 24 }} />
                 <Typography sx={{ fontWeight: 700, color: '#2C3E50', fontSize: '1.2rem' }}>
-                  {t('dashboard.latestAnnouncements')}
+                  {t('dashboard.announcements')} ({announcements.length})
                 </Typography>
               </Box>
           
               {announcements.length > 0 ? (
-                <Box sx={{ maxWidth: '800px', mx: 'auto' }}>
-                  {announcements.map((announcement, index) => (
+                <Box sx={{ 
+                  maxWidth: '800px', 
+                  mx: 'auto', 
+                  width: '100%',
+                  flex: 1,
+                  overflowY: 'auto',
+                  overflowX: 'hidden',
+                  pr: 2,
+                  minHeight: 0,
+                  '&::-webkit-scrollbar': {
+                    width: '10px',
+                  },
+                  '&::-webkit-scrollbar-track': {
+                    backgroundColor: '#f5f5f5',
+                    borderRadius: '5px',
+                  },
+                  '&::-webkit-scrollbar-thumb': {
+                    backgroundColor: '#bdc3c7',
+                    borderRadius: '5px',
+                    '&:hover': {
+                      backgroundColor: '#95a5a6',
+                    },
+                  },
+                  scrollbarWidth: 'thin',
+                  scrollbarColor: '#bdc3c7 #f5f5f5',
+                }}>
+                  {announcements.map((announcement, index) => {
+                    console.log('Rendering announcement:', index + 1, announcement.title);
+                    // Use a unique key - combine id and index as fallback
+                    const uniqueKey = announcement.id || `announcement-${index}-${announcement.title}`;
+                    return (
                     <Paper
-                      key={announcement.id}
+                      key={uniqueKey}
                       elevation={0}
                       sx={{
                         p: 4,
@@ -604,7 +653,8 @@ function PWDMemberDashboard() {
                         </Button>
                       </Box>
                     </Paper>
-                  ))}
+                    );
+                  })}
                 </Box>
               ) : (
                 <Box sx={{ textAlign: 'center', py: 8 }}>

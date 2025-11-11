@@ -15,10 +15,12 @@ class ApplicationValidationService
     {
         $duplicates = [];
         
-        // Check email duplicates
-        $emailDuplicate = $this->checkEmailDuplicate($data['email'], $excludeApplicationId);
-        if ($emailDuplicate) {
-            $duplicates['email'] = $emailDuplicate;
+        // Check email duplicates (only if email is provided)
+        if (isset($data['email']) && !empty($data['email'])) {
+            $emailDuplicate = $this->checkEmailDuplicate($data['email'], $excludeApplicationId);
+            if ($emailDuplicate) {
+                $duplicates['email'] = $emailDuplicate;
+            }
         }
         
         // Check phone number duplicates (accept either key from request)
@@ -192,15 +194,14 @@ class ApplicationValidationService
             'emergencyPhone' => 'nullable|string|max:20',
             'emergencyRelationship' => 'nullable|string|in:Parent,Sibling,Spouse,Child,Friend,Colleague,Relative,Guardian,Other',
             // Document validation rules
-            'medicalCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
-            'clinicalAbstract' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
-            'voterCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
-            'idPictures' => 'nullable|array',
-            'idPictures.*' => 'file|mimes:jpeg,png,jpg|max:2048',
-            'birthCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
-            'wholeBodyPicture' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
-            'affidavit' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
-            'barangayCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:2048',
+            'medicalCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:15360',
+            'clinicalAbstract' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:15360',
+            'voterCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:15360',
+            'idPictures' => 'nullable|file|mimes:jpeg,png,jpg|max:15360', // Changed to single file (standardized)
+            'birthCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:15360',
+            'wholeBodyPicture' => 'nullable|file|mimes:jpeg,png,jpg|max:15360',
+            'affidavit' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:15360',
+            'barangayCertificate' => 'nullable|file|mimes:jpeg,png,jpg,pdf|max:15360',
         ];
     }
     
