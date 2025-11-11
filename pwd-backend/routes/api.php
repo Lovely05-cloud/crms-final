@@ -867,6 +867,9 @@ Route::get('/benefit-claims', [BenefitClaimController::class, 'index']);
 Route::post('/benefit-claims', [BenefitClaimController::class, 'store']);
 Route::patch('/benefit-claims/{id}/status', [BenefitClaimController::class, 'updateStatus']);
 
+// QR scan claim benefits route
+Route::post('/qr-scan/claim-benefits', [BenefitClaimController::class, 'claimBenefits']);
+
 // PWD Member profile routes
 Route::get('/pwd-member/profile', function (Request $request) {
     try {
@@ -886,6 +889,19 @@ Route::get('/pwd-member/profile', function (Request $request) {
             ->latest()
             ->first();
         
+        // Ensure QR code is generated if it doesn't exist
+        if (empty($pwdMember->qr_code_data)) {
+            try {
+                \App\Services\QRCodeGenerator::generateAndStore($pwdMember);
+                $pwdMember->refresh(); // Refresh to get the newly generated QR code data
+            } catch (\Exception $qrError) {
+                \Illuminate\Support\Facades\Log::error('QR code generation failed in profile endpoint', [
+                    'error' => $qrError->getMessage(),
+                    'pwd_member_id' => $pwdMember->userID
+                ]);
+            }
+        }
+        
         $profile = [
             'userID' => $user->userID,
             'firstName' => $pwdMember->firstName,
@@ -899,6 +915,8 @@ Route::get('/pwd-member/profile', function (Request $request) {
             'pwd_id' => $pwdMember->pwd_id,
             'barangay' => $approvedApplication ? $approvedApplication->barangay : null,
             'created_at' => $pwdMember->created_at,
+            'qr_code_data' => $pwdMember->qr_code_data,
+            'qr_code_generated_at' => $pwdMember->qr_code_generated_at,
         ];
         
         return response()->json($profile);
@@ -1715,7 +1733,8 @@ Route::get('application-file/{applicationId}/{fileType}', function($applicationI
             'voterCertificate' => 'voterCertificate',
             'birthCertificate' => 'birthCertificate',
             'wholeBodyPicture' => 'wholeBodyPicture',
-            'affidavit' => 'affidavit'
+            'affidavit' => 'affidavit',
+            'idPictures' => 'idPictures' // Support idPictures (array)
         ];
         
         if (!isset($fileFieldMap[$fileType])) {
@@ -1734,6 +1753,25 @@ Route::get('application-file/{applicationId}/{fileType}', function($applicationI
                 'application_id' => $applicationId,
                 'file_type' => $fileType
             ], 404);
+        }
+        
+        // Handle idPictures (array) - support index parameter
+        if ($fileType === 'idPictures') {
+            $idPictures = is_string($filePath) ? json_decode($filePath, true) : $filePath;
+            if (is_array($idPictures) && count($idPictures) > 0) {
+                // Get index from query parameter (default to 0)
+                $index = request()->get('index', 0);
+                $index = (int)$index;
+                if ($index < 0 || $index >= count($idPictures)) {
+                    $index = 0; // Default to first image if index is invalid
+                }
+                $filePath = $idPictures[$index];
+            } else {
+                return response()->json([
+                    'error' => 'ID pictures not found for this application',
+                    'application_id' => $applicationId
+                ], 404);
+            }
         }
         
         $fullFilePath = storage_path('app/public/' . $filePath);
@@ -2397,6 +2435,16 @@ Route::middleware('auth:sanctum')->post('/applications/{applicationId}/approve-a
         $pwdMember->pwd_id = $pwdId;
         $pwdMember->status = 'Active';
         $pwdMember->save();
+        
+        // Generate and store QR code for the new PWD member
+        try {
+            \App\Services\QRCodeGenerator::generateAndStore($pwdMember);
+        } catch (\Exception $qrError) {
+            \Illuminate\Support\Facades\Log::error('QR code generation failed during approval', [
+                'error' => $qrError->getMessage(),
+                'pwd_member_id' => $pwdMember->userID
+            ]);
+        }
 
         // Create User account
         $newUser = new \App\Models\User();

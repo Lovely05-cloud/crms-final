@@ -10,12 +10,14 @@ class AuditLog extends Model
     use HasFactory;
 
     protected $table = 'audit_log';
-    protected $primaryKey = 'logID';
+    protected $primaryKey = 'id';
     
     protected $fillable = [
         'userID',
         'action',
-        'timestamp'
+        'timestamp',
+        'ip_address',
+        'user_agent'
     ];
 
     protected $casts = [

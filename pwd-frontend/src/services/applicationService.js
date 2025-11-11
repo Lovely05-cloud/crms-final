@@ -1,4 +1,5 @@
 import api from './api';
+import toastService from './toastService';
 
 export const applicationService = {
   // Get all applications
@@ -8,6 +9,7 @@ export const applicationService = {
       return response;
     } catch (error) {
       console.error('Error fetching applications:', error);
+      toastService.error('Failed to fetch applications: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -19,6 +21,7 @@ export const applicationService = {
       return response;
     } catch (error) {
       console.error('Error creating application:', error);
+      toastService.error('Failed to create application: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -30,6 +33,7 @@ export const applicationService = {
       return response;
     } catch (error) {
       console.error('Error updating application:', error);
+      toastService.error('Failed to update application: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -41,6 +45,7 @@ export const applicationService = {
       return response;
     } catch (error) {
       console.error('Error deleting application:', error);
+      toastService.error('Failed to delete application: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -52,6 +57,7 @@ export const applicationService = {
       return response;
     } catch (error) {
       console.error('Error fetching application:', error);
+      toastService.error('Failed to fetch application: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -63,6 +69,7 @@ export const applicationService = {
       return response;
     } catch (error) {
       console.error('Error updating application status:', error);
+      toastService.error('Failed to update application status: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -74,6 +81,7 @@ export const applicationService = {
       return response;
     } catch (error) {
       console.error('Error fetching applications by status:', error);
+      toastService.error('Failed to fetch applications by status: ' + (error.message || 'Unknown error'));
       throw error;
     }
   }

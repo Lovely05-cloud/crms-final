@@ -255,7 +255,7 @@ function PWDCard() {
       setLoading(true);
       const response = await pwdMemberService.claimCard(member.memberId);
       
-      if (response.data?.success) {
+      if (response?.success) {
         showModal({
           type: 'success',
           title: 'Card Claimed Successfully',
@@ -266,7 +266,7 @@ function PWDCard() {
         // Refresh the members list to update card status
         await fetchPwdMembers();
       } else {
-        throw new Error(response.data?.message || 'Failed to claim card');
+        throw new Error(response?.message || 'Failed to claim card');
       }
     } catch (error) {
       console.error('Error claiming card:', error);

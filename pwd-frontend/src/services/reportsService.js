@@ -1,56 +1,185 @@
 // src/services/reportsService.js
 import { api } from './api';
+import toastService from './toastService';
 
 export const reportsService = {
   // Get all reports
-  getAllReports: () => api.get('/reports'),
+  getAllReports: async () => {
+    try {
+      return await api.get('/reports');
+    } catch (error) {
+      console.error('Error fetching all reports:', error);
+      toastService.error('Failed to fetch reports: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Get report by ID
-  getReport: (id) => api.get(`/reports/${id}`),
+  getReport: async (id) => {
+    try {
+      return await api.get(`/reports/${id}`);
+    } catch (error) {
+      console.error('Error fetching report:', error);
+      toastService.error('Failed to fetch report: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Generate a specific type of report
-  generateReport: (type, params = {}) => api.post(`/reports/generate/${type}`, params),
+  generateReport: async (type, params = {}) => {
+    try {
+      return await api.post(`/reports/generate/${type}`, params);
+    } catch (error) {
+      console.error('Error generating report:', error);
+      toastService.error('Failed to generate report: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Get PWD statistics for barangay presidents
-  getBarangayStats: (barangay) => api.get(`/reports/barangay-stats/${encodeURIComponent(barangay)}`),
+  getBarangayStats: async (barangay) => {
+    try {
+      return await api.get(`/reports/barangay-stats/${encodeURIComponent(barangay)}`);
+    } catch (error) {
+      console.error('Error fetching barangay stats:', error);
+      toastService.error('Failed to fetch barangay statistics: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Get PWD masterlist for barangay
-  getPWDMasterlist: (barangay) => api.get(`/reports/pwd-masterlist/${encodeURIComponent(barangay)}`),
+  getPWDMasterlist: async (barangay) => {
+    try {
+      return await api.get(`/reports/pwd-masterlist/${encodeURIComponent(barangay)}`);
+    } catch (error) {
+      console.error('Error fetching PWD masterlist:', error);
+      toastService.error('Failed to fetch PWD masterlist: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Get application status report
-  getApplicationStatusReport: (barangay) => api.get(`/reports/application-status/${encodeURIComponent(barangay)}`),
+  getApplicationStatusReport: async (barangay) => {
+    try {
+      return await api.get(`/reports/application-status/${encodeURIComponent(barangay)}`);
+    } catch (error) {
+      console.error('Error fetching application status report:', error);
+      toastService.error('Failed to fetch application status report: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Get disability distribution report
-  getDisabilityDistribution: (barangay) => api.get(`/reports/disability-distribution/${encodeURIComponent(barangay)}`),
+  getDisabilityDistribution: async (barangay) => {
+    try {
+      return await api.get(`/reports/disability-distribution/${encodeURIComponent(barangay)}`);
+    } catch (error) {
+      console.error('Error fetching disability distribution:', error);
+      toastService.error('Failed to fetch disability distribution: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Get age group analysis
-  getAgeGroupAnalysis: (barangay) => api.get(`/reports/age-group-analysis/${encodeURIComponent(barangay)}`),
+  getAgeGroupAnalysis: async (barangay) => {
+    try {
+      return await api.get(`/reports/age-group-analysis/${encodeURIComponent(barangay)}`);
+    } catch (error) {
+      console.error('Error fetching age group analysis:', error);
+      toastService.error('Failed to fetch age group analysis: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Get benefit distribution report
-  getBenefitDistribution: (barangay) => api.get(`/reports/benefit-distribution/${encodeURIComponent(barangay)}`),
+  getBenefitDistribution: async (barangay) => {
+    try {
+      return await api.get(`/reports/benefit-distribution/${encodeURIComponent(barangay)}`);
+    } catch (error) {
+      console.error('Error fetching benefit distribution:', error);
+      toastService.error('Failed to fetch benefit distribution: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Get monthly activity summary
-  getMonthlyActivitySummary: (barangay) => api.get(`/reports/monthly-activity/${encodeURIComponent(barangay)}`),
+  getMonthlyActivitySummary: async (barangay) => {
+    try {
+      return await api.get(`/reports/monthly-activity/${encodeURIComponent(barangay)}`);
+    } catch (error) {
+      console.error('Error fetching monthly activity summary:', error);
+      toastService.error('Failed to fetch monthly activity summary: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Get city-wide statistics for admin
-  getCityWideStats: () => api.get('/reports/city-wide-stats'),
+  getCityWideStats: async () => {
+    try {
+      return await api.get('/reports/city-wide-stats');
+    } catch (error) {
+      console.error('Error fetching city-wide stats:', error);
+      toastService.error('Failed to fetch city-wide statistics: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Get barangay performance report
-  getBarangayPerformance: () => api.get('/reports/barangay-performance'),
+  getBarangayPerformance: async () => {
+    try {
+      return await api.get('/reports/barangay-performance');
+    } catch (error) {
+      console.error('Error fetching barangay performance:', error);
+      toastService.error('Failed to fetch barangay performance: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Download report as PDF/Excel
-  downloadReport: (reportId, format = 'pdf') => api.get(`/reports/${reportId}/download?format=${format}`, { 
-    responseType: 'blob' 
-  }),
+  downloadReport: async (reportId, format = 'pdf') => {
+    try {
+      return await api.get(`/reports/${reportId}/download?format=${format}`, { 
+        responseType: 'blob' 
+      });
+    } catch (error) {
+      console.error('Error downloading report:', error);
+      toastService.error('Failed to download report: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Create new report
-  createReport: (reportData) => api.post('/reports', reportData),
+  createReport: async (reportData) => {
+    try {
+      return await api.post('/reports', reportData);
+    } catch (error) {
+      console.error('Error creating report:', error);
+      toastService.error('Failed to create report: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Update report
-  updateReport: (id, reportData) => api.put(`/reports/${id}`, reportData),
+  updateReport: async (id, reportData) => {
+    try {
+      return await api.put(`/reports/${id}`, reportData);
+    } catch (error) {
+      console.error('Error updating report:', error);
+      toastService.error('Failed to update report: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Delete report
-  deleteReport: (id) => api.delete(`/reports/${id}`)
+  deleteReport: async (id) => {
+    try {
+      return await api.delete(`/reports/${id}`);
+    } catch (error) {
+      console.error('Error deleting report:', error);
+      toastService.error('Failed to delete report: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  }
 };
 
 export default reportsService;

@@ -3,6 +3,7 @@ import { Box, Typography, Button, Avatar, IconButton, Badge } from '@mui/materia
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import FavoriteIcon from '@mui/icons-material/Favorite';
 import TrackChangesIcon from '@mui/icons-material/TrackChanges';
+import DescriptionIcon from '@mui/icons-material/Description';
 import LogoutIcon from '@mui/icons-material/Logout';
 import PersonIcon from '@mui/icons-material/Person';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
@@ -212,6 +213,13 @@ function Staff2Sidebar({ isOpen, onToggle }) {
           label="Benefit Tracking"
           path="/staff2-benefit-tracking"
           active={isActive('/staff2-benefit-tracking')}
+        />
+        
+        <SidebarItem
+          icon={<DescriptionIcon />}
+          label="Claim History"
+          path="/staff2-claim-history"
+          active={isActive('/staff2-claim-history')}
         />
       </Box>
 

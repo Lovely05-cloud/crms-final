@@ -66,6 +66,7 @@ import Staff2Sidebar from '../shared/Staff2Sidebar';
 import { useAuth } from '../../contexts/AuthContext';
 import pwdMemberService from '../../services/pwdMemberService';
 import benefitService from '../../services/benefitService';
+import announcementService from '../../services/announcementService';
 
 const Ayuda = () => {
   const { currentUser } = useAuth();
@@ -274,6 +275,19 @@ const Ayuda = () => {
   };
 
   const handleSubmit = async () => {
+    // Validate distribution date
+    if (formData.distributionDate) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Set to midnight for comparison
+      const selectedDistributionDate = new Date(formData.distributionDate);
+      selectedDistributionDate.setHours(0, 0, 0, 0); // Set to midnight
+      
+      if (selectedDistributionDate < today) {
+        toastService.error('Distribution date cannot be in the past. Please select today or a future date.');
+        return;
+      }
+    }
+    
     // Validate expiry date
     if (formData.expiryDate) {
       const today = new Date();
@@ -288,7 +302,16 @@ const Ayuda = () => {
     if (editingBenefit) {
       // Update existing benefit
       try {
-        await benefitService.update(editingBenefit.id, formData);
+        // Format distribution date to include time (12:00 AM)
+        const updateData = {
+          ...formData,
+          distributionDate: formData.distributionDate ? (() => {
+            const dateObj = new Date(formData.distributionDate);
+            dateObj.setHours(0, 0, 0, 0); // Set to 12:00 AM
+            return dateObj.toISOString();
+          })() : formData.distributionDate
+        };
+        await benefitService.update(editingBenefit.id, updateData);
         const updatedBenefits = benefits.map(benefit => 
           benefit.id === editingBenefit.id 
             ? { 
@@ -297,7 +320,7 @@ const Ayuda = () => {
                 amount: formData.amount,
                 description: formData.description,
                 targetRecipients: formData.targetRecipients,
-                distributionDate: formData.distributionDate,
+                distributionDate: updateData.distributionDate,
                 expiryDate: formData.expiryDate,
                 barangay: formData.barangay,
                 selectedBarangays: formData.selectedBarangays,
@@ -333,6 +356,14 @@ const Ayuda = () => {
           await generateEligibleMembersPDF();
         }
         
+        // Format distribution date to include time (12:00 AM)
+        let formattedDistributionDate = formData.distributionDate;
+        if (formData.distributionDate) {
+          const dateObj = new Date(formData.distributionDate);
+          dateObj.setHours(0, 0, 0, 0); // Set to 12:00 AM
+          formattedDistributionDate = dateObj.toISOString();
+        }
+        
         const newPendingSchedule = {
           id: pendingSchedules.length > 0 ? Math.max(...pendingSchedules.map(p => p.id), 0) + 1 : 1,
           name: formData.type, // Use type as name for backward compatibility
@@ -340,7 +371,7 @@ const Ayuda = () => {
           amount: formData.amount,
           description: formData.description,
           targetRecipients: formData.targetRecipients,
-          distributionDate: formData.distributionDate,
+          distributionDate: formattedDistributionDate,
           expiryDate: formData.expiryDate,
           barangay: formData.barangay,
           selectedBarangays: formData.selectedBarangays,
@@ -370,6 +401,124 @@ const Ayuda = () => {
       }
     }
     handleCloseDialog();
+  };
+
+  // Create announcement for approved benefit
+  const createBenefitAnnouncement = async (benefit) => {
+    try {
+      // Format dates for announcement
+      const distributionDate = benefit.distributionDate 
+        ? new Date(benefit.distributionDate).toISOString().split('T')[0]
+        : new Date().toISOString().split('T')[0];
+      
+      // Use expiry date if available, otherwise set to 1 year from distribution date
+      let expiryDate = benefit.expiryDate 
+        ? new Date(benefit.expiryDate).toISOString().split('T')[0]
+        : null;
+      
+      if (!expiryDate) {
+        const oneYearLater = new Date(distributionDate);
+        oneYearLater.setFullYear(oneYearLater.getFullYear() + 1);
+        expiryDate = oneYearLater.toISOString().split('T')[0];
+      }
+
+      // Build announcement content
+      let announcementContent = `${benefit.description || 'A new benefit program is now available for claiming.'}\n\n`;
+      announcementContent += `Benefit Type: ${benefit.type}\n`;
+      announcementContent += `Amount: ${benefit.amount}\n\n`;
+      
+      // Add eligibility criteria
+      if (benefit.type === 'Financial Assistance' && benefit.selectedBarangays && benefit.selectedBarangays.length > 0) {
+        announcementContent += `Eligibility: This benefit is available for PWD members from the following barangays: ${benefit.selectedBarangays.join(', ')}.\n\n`;
+      } else if (benefit.type === 'Birthday Cash Gift' && benefit.birthdayMonth) {
+        const quarterName = getQuarterName(benefit.birthdayMonth);
+        announcementContent += `Eligibility: This benefit is available for PWD members with birthdays in ${quarterName}.\n`;
+        if (benefit.selectedBarangays && benefit.selectedBarangays.length > 0) {
+          announcementContent += `Additionally, members must be from the following barangays: ${benefit.selectedBarangays.join(', ')}.\n\n`;
+        } else {
+          announcementContent += '\n';
+        }
+      } else if (benefit.barangay && benefit.barangay !== 'All Barangays') {
+        announcementContent += `Eligibility: This benefit is available for PWD members from ${benefit.barangay}.\n\n`;
+      } else {
+        announcementContent += `Eligibility: This benefit is available for all eligible PWD members.\n\n`;
+      }
+
+      announcementContent += `Available for claiming from ${formatDateMMDDYYYY(distributionDate)} to ${expiryDate ? formatDateMMDDYYYY(expiryDate) : 'until further notice'}.\n\n`;
+      announcementContent += `Please visit the PDAO office or use the QR code scanning feature to claim your benefit.`;
+
+      // Determine target audience and create announcements
+      const announcementsToCreate = [];
+
+      if (benefit.type === 'Financial Assistance' && benefit.selectedBarangays && benefit.selectedBarangays.length > 0) {
+        // Create one announcement per barangay for Financial Assistance
+        for (const barangay of benefit.selectedBarangays) {
+          announcementsToCreate.push({
+            title: `New Benefit Available: ${benefit.type}`,
+            content: announcementContent,
+            type: 'Event',
+            priority: 'High',
+            targetAudience: barangay, // Target specific barangay
+            status: 'Active',
+            publishDate: distributionDate,
+            expiryDate: expiryDate
+          });
+        }
+      } else if (benefit.type === 'Birthday Cash Gift') {
+        // For Birthday Cash Gift, use "PWD Members" as target audience
+        // The eligibility criteria (quarter) is included in the content
+        announcementsToCreate.push({
+          title: `New Benefit Available: ${benefit.type}`,
+          content: announcementContent,
+          type: 'Event',
+          priority: 'High',
+          targetAudience: 'PWD Members', // All PWD members (eligibility in content)
+          status: 'Active',
+          publishDate: distributionDate,
+          expiryDate: expiryDate || distributionDate
+        });
+      } else if (benefit.barangay && benefit.barangay !== 'All Barangays') {
+        // Single barangay benefit
+        announcementsToCreate.push({
+          title: `New Benefit Available: ${benefit.type}`,
+          content: announcementContent,
+          type: 'Event',
+          priority: 'High',
+          targetAudience: benefit.barangay,
+          status: 'Active',
+          publishDate: distributionDate,
+          expiryDate: expiryDate || distributionDate
+        });
+      } else {
+        // All PWD members
+        announcementsToCreate.push({
+          title: `New Benefit Available: ${benefit.type}`,
+          content: announcementContent,
+          type: 'Event',
+          priority: 'High',
+          targetAudience: 'PWD Members',
+          status: 'Active',
+          publishDate: distributionDate,
+          expiryDate: expiryDate || distributionDate
+        });
+      }
+
+      // Create all announcements
+      for (const announcementData of announcementsToCreate) {
+        try {
+          await announcementService.create(announcementData);
+          console.log('Announcement created successfully:', announcementData.title);
+        } catch (announcementError) {
+          console.error('Error creating announcement:', announcementError);
+          // Continue creating other announcements even if one fails
+        }
+      }
+
+      return announcementsToCreate.length;
+    } catch (error) {
+      console.error('Error creating benefit announcement:', error);
+      throw error;
+    }
   };
 
   const handleApproveSchedule = async () => {
@@ -405,6 +554,16 @@ const Ayuda = () => {
         const updatedPendingSchedules = pendingSchedules.filter(p => p.id !== selectedPendingSchedule.id);
         setPendingSchedules(updatedPendingSchedules);
         localStorage.setItem('pendingSchedules', JSON.stringify(updatedPendingSchedules));
+
+        // Create announcement for the approved benefit
+        try {
+          const announcementCount = await createBenefitAnnouncement(approvedBenefit);
+          console.log(`Created ${announcementCount} announcement(s) for the benefit program.`);
+        } catch (announcementError) {
+          console.error('Error creating announcement:', announcementError);
+          // Don't fail the approval if announcement creation fails
+          toastService.warning('Benefit approved, but failed to create announcement. Please create it manually.');
+        }
 
         // Close dialogs and reset
         setOpenApprovalDialog(false);
@@ -1736,9 +1895,31 @@ const Ayuda = () => {
                   label="Distribution Date"
                   type="date"
                   value={formData.distributionDate}
-                  onChange={(e) => setFormData({ ...formData, distributionDate: e.target.value })}
+                  onChange={(e) => {
+                    const selectedDate = e.target.value;
+                    if (selectedDate) {
+                      // Set the date to 12:00 AM (midnight) of the selected date
+                      const dateObj = new Date(selectedDate);
+                      dateObj.setHours(0, 0, 0, 0);
+                      // Format as YYYY-MM-DD for the input (date input doesn't include time)
+                      const formattedDate = dateObj.toISOString().split('T')[0];
+                      setFormData({ ...formData, distributionDate: formattedDate });
+                    } else {
+                      setFormData({ ...formData, distributionDate: '' });
+                    }
+                  }}
                   InputLabelProps={{
                     shrink: true,
+                  }}
+                  inputProps={{
+                    min: new Date().toISOString().split('T')[0] // Today's date - cannot select past dates
+                  }}
+                  helperText="Distribution date must be today or a future date. Time will be set to 12:00 AM."
+                  FormHelperTextProps={{
+                    sx: {
+                      color: '#B0BEC5',
+                      fontSize: '0.75rem'
+                    }
                   }}
                   sx={{
                     '& .MuiInputLabel-root': {

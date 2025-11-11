@@ -201,7 +201,8 @@ class SecurityMonitoringMiddleware
         }
 
         // Check for excessive request size (potential DoS)
-        if ($request->getContentLength() > 10485760) { // 10MB
+        $contentLength = $request->header('Content-Length');
+        if ($contentLength && (int)$contentLength > 10485760) { // 10MB
             // Randomly assign severity: 40% low, 30% medium, 20% high, 10% critical
             $severities = ['low', 'low', 'low', 'low', 'medium', 'medium', 'medium', 'high', 'high', 'critical'];
             $severity = $severities[array_rand($severities)];
@@ -212,7 +213,7 @@ class SecurityMonitoringMiddleware
                 $request,
                 $url,
                 $method,
-                ['size' => $request->getContentLength()],
+                ['size' => $contentLength],
                 'Very large request detected (potential DoS attempt)'
             );
         }

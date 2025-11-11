@@ -117,6 +117,11 @@ function BarangayPresidentPWDRecords() {
   const [approvalConfirmationOpen, setApprovalConfirmationOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState(null); // 'approve' or 'reject'
   
+  // Image preview modal state
+  const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState(null);
+  const [previewImageTitle, setPreviewImageTitle] = useState('');
+  
   // Toast notifications will be used instead of modals
 
   // Fetch document types
@@ -149,9 +154,73 @@ function BarangayPresidentPWDRecords() {
     return path.includes('/') ? path : `applications/${path}`;
   };
 
+  // Map field names to API fileType parameter
+  const getFileTypeFromFieldName = (fieldName) => {
+    const fieldToTypeMap = {
+      'medicalCertificate': 'medicalCertificate',
+      'barangayCertificate': 'barangayCertificate',
+      'clinicalAbstract': 'clinicalAbstract',
+      'voterCertificate': 'voterCertificate',
+      'birthCertificate': 'birthCertificate',
+      'wholeBodyPicture': 'wholeBodyPicture',
+      'affidavit': 'affidavit',
+      'idPictures': 'idPictures' // Special case - handled separately
+    };
+    return fieldToTypeMap[fieldName] || null;
+  };
+
+  // Get authenticated image URL as blob for thumbnails
+  const getAuthenticatedImageUrl = async (fieldName) => {
+    if (!selectedApplication || !selectedApplication[fieldName]) return null;
+    
+    const fileType = getFileTypeFromFieldName(fieldName);
+    if (!fileType || !selectedApplication.applicationID) return null;
+    
+    try {
+      const url = filePreviewService.getPreviewUrl('application-file', selectedApplication.applicationID, fileType);
+      
+      // Fetch image with authentication
+      const token = localStorage.getItem('auth.token');
+      const headers = {};
+      if (token) {
+        try {
+          const tokenData = JSON.parse(token);
+          const tokenValue = typeof tokenData === 'string' ? tokenData : tokenData.token;
+          if (tokenValue) {
+            headers['Authorization'] = `Bearer ${tokenValue}`;
+          }
+        } catch (e) {
+          console.warn('Error parsing token:', e);
+        }
+      }
+      
+      const response = await fetch(url, { headers });
+      if (!response.ok) throw new Error('Failed to fetch image');
+      
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      console.warn('Error fetching authenticated image:', error);
+      return null;
+    }
+  };
+
   const getFileUrl = (fieldName) => {
     if (!selectedApplication || !selectedApplication[fieldName]) return null;
     
+    // Use authenticated API endpoint for thumbnails
+    const fileType = getFileTypeFromFieldName(fieldName);
+    if (fileType && selectedApplication.applicationID) {
+      try {
+        // Use filePreviewService to get authenticated URL
+        return filePreviewService.getPreviewUrl('application-file', selectedApplication.applicationID, fileType);
+      } catch (error) {
+        console.warn('Error getting authenticated file URL, falling back to storage URL:', error);
+        // Fallback to storage URL if authenticated URL fails
+      }
+    }
+    
+    // Fallback to storage URL for idPictures or if fileType mapping fails
     const fileName = selectedApplication[fieldName];
     
     // Handle JSON string (for arrays stored as strings)
@@ -219,82 +288,8 @@ function BarangayPresidentPWDRecords() {
       return;
     }
     
-    // Handle idPictures specially - use storage URL directly since API doesn't support it
-    if (fileType === 'idPictures' || fileType.includes('idPicture')) {
-      const fileName = selectedApplication[fileType];
-      if (!fileName) {
-        console.error('No file found for field:', fileType);
-        return;
-      }
-      
-      let parsedFiles = fileName;
-      if (typeof fileName === 'string') {
-        try {
-          const parsed = JSON.parse(fileName);
-          if (Array.isArray(parsed)) {
-            parsedFiles = parsed;
-          }
-        } catch (e) {
-          parsedFiles = fileName;
-        }
-      }
-      
-      // Get the file path
-      let filePath = '';
-      if (Array.isArray(parsedFiles)) {
-        const file = parsedFiles[fileIndex] || parsedFiles[0];
-        if (!file) return;
-        filePath = file;
-      } else {
-        filePath = parsedFiles;
-      }
-      
-      if (!filePath) return;
-      
-      // Build storage URL properly
-      // Remove any leading slashes
-      let cleanPath = filePath.startsWith('/') ? filePath.substring(1) : filePath;
-      
-      // Determine normalized path based on what we have
-      let normalizedPath = '';
-      
-      // Check different path formats that might be stored in the database
-      if (cleanPath.startsWith('uploads/applications/')) {
-        // Path already includes full structure: uploads/applications/YYYY/MM/DD/file.jpg
-        // Keep it as is - Laravel storage link handles this
-        normalizedPath = cleanPath;
-      } else if (cleanPath.startsWith('applications/')) {
-        // Path has applications/ but not uploads/
-        // Add uploads/ prefix for Laravel storage structure
-        normalizedPath = `uploads/${cleanPath}`;
-      } else if (cleanPath.includes('/') && /^\d{4}\/\d{2}\/\d{2}\//.test(cleanPath.split('/').slice(-4).join('/'))) {
-        // Path is date-based (YYYY/MM/DD/filename) but missing prefix folders
-        normalizedPath = `uploads/applications/${cleanPath}`;
-      } else if (!cleanPath.includes('/')) {
-        // Just a filename
-        normalizedPath = `uploads/applications/${cleanPath}`;
-      } else {
-        // Has some directory structure - try to add uploads/applications/
-        normalizedPath = `uploads/applications/${cleanPath}`;
-      }
-      
-      // Normalize path segments for encoding
-      normalizedPath = normalizeFilePath(normalizedPath);
-      
-      // Construct storage URL - api.getStorageUrl adds '/storage/' prefix
-      // Laravel storage link maps public/storage to storage/app/public
-      // So files in storage/app/public/uploads/applications/... are at /storage/uploads/applications/...
-      const fileUrl = api.getStorageUrl(normalizedPath);
-      
-      console.log('ID Picture preview URL:', { originalPath: filePath, cleanPath, normalizedPath, fileUrl });
-      if (fileUrl) {
-        window.open(fileUrl, '_blank', 'noopener,noreferrer');
-      }
-      return;
-    }
-    
     // Map field name to backend document type name
-    const documentType = mapFieldNameToDocumentType(fileType);
+    const documentType = mapFieldNameToDocumentType(fileType) || getFileTypeFromFieldName(fileType);
     
     if (!documentType) {
       console.error(`Document type not supported for field: ${fileType}`);
@@ -302,12 +297,55 @@ function BarangayPresidentPWDRecords() {
       return;
     }
     
-    // Use the filePreviewService which handles authentication and proper API endpoints
-    filePreviewService.openPreview('application-file', selectedApplication.applicationID, documentType);
+    // Get the file URL using authenticated endpoint
+    try {
+      // For idPictures arrays, pass the index parameter
+      const indexParam = (fileType === 'idPictures' || fileType.includes('idPicture')) ? fileIndex : null;
+      const fileUrl = filePreviewService.getPreviewUrl('application-file', selectedApplication.applicationID, documentType, indexParam);
+      
+      // Check if it's an image file by checking the field name
+      const fileName = selectedApplication[fileType];
+      let isImage = false;
+      
+      if (Array.isArray(fileName) || (typeof fileName === 'string' && fileName.startsWith('['))) {
+        // For arrays, check the file at the specified index
+        try {
+          const parsed = typeof fileName === 'string' ? JSON.parse(fileName) : fileName;
+          if (Array.isArray(parsed) && parsed[fileIndex]) {
+            isImage = isImageFile(parsed[fileIndex]);
+          }
+        } catch (e) {
+          // Not an array, check the field name
+          isImage = isImageFile(fileType);
+        }
+      } else {
+        isImage = isImageFile(fileName);
+      }
+      
+      if (isImage) {
+        // Open in modal for images
+        setPreviewImageUrl(fileUrl);
+        const title = documentMapping[fileType]?.name || fileType;
+        setPreviewImageTitle(fileIndex > 0 ? `${title} - Image ${fileIndex + 1}` : title);
+        setImagePreviewOpen(true);
+      } else {
+        // For non-images (PDFs, etc.), open in new tab
+        filePreviewService.openPreview('application-file', selectedApplication.applicationID, documentType);
+      }
+    } catch (error) {
+      console.error('Error getting file preview URL:', error);
+      toastService.error('Failed to load file preview');
+    }
   };
 
   const handleViewFile = (fileType) => {
     handleViewFileBatch(fileType, 0);
+  };
+
+  const handleCloseImagePreview = () => {
+    setImagePreviewOpen(false);
+    setPreviewImageUrl(null);
+    setPreviewImageTitle('');
   };
 
 
@@ -1985,8 +2023,26 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
                                   return (
                                     <Box sx={{ display: 'flex', gap: 0.5 }}>
                                       {parsedFiles.slice(0, 2).map((file, index) => {
-                                        const normalizedPath = normalizeFilePath(ensureStorageFolder(file));
-                                        const singleFileUrl = api.getStorageUrl(normalizedPath);
+                                        // Always use authenticated URL for thumbnails
+                                        let singleFileUrl = null;
+                                        const fileType = getFileTypeFromFieldName(fieldName);
+                                        if (fileType && selectedApplication.applicationID) {
+                                          try {
+                                            // Pass index for idPictures arrays
+                                            singleFileUrl = filePreviewService.getPreviewUrl('application-file', selectedApplication.applicationID, fileType, index);
+                                          } catch (error) {
+                                            console.warn('Error getting authenticated URL for array file:', error);
+                                          }
+                                        }
+                                        // If authenticated URL fails, try storage URL as last resort
+                                        if (!singleFileUrl) {
+                                          try {
+                                            const normalizedPath = normalizeFilePath(ensureStorageFolder(file));
+                                            singleFileUrl = api.getStorageUrl(normalizedPath);
+                                          } catch (error) {
+                                            console.warn('Error getting storage URL:', error);
+                                          }
+                                        }
                                         return (
                                           <Box
                                             key={index}
@@ -2013,6 +2069,11 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
                                               <img 
                                                 src={singleFileUrl} 
                                                 alt="Preview" 
+                                                crossOrigin="anonymous"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleViewFileBatch(fieldName, index);
+                                                }}
                                                 onError={(e) => {
                                                   e.target.style.display = 'none';
                                                   e.target.parentElement.innerHTML = '<span style="font-size: 0.8rem; color: white;">Preview</span>';
@@ -2020,7 +2081,8 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
                                                 style={{ 
                                                   width: '100%', 
                                                   height: '100%', 
-                                                  objectFit: 'cover' 
+                                                  objectFit: 'cover',
+                                                  cursor: 'pointer'
                                                 }}
                                               />
                                             ) : (
@@ -2048,9 +2110,24 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
                                     </Box>
                                   );
                                 } else {
-                                  // Handle single file - ensure fileUrl is properly generated
-                                  const normalizedPath = normalizeFilePath(ensureStorageFolder(fileName || ''));
-                                  const finalFileUrl = fileUrl || api.getStorageUrl(normalizedPath);
+                                  // Handle single file - use authenticated URL if available
+                                  let finalFileUrl = fileUrl;
+                                  if (!finalFileUrl) {
+                                    // Try authenticated URL first
+                                    const fileType = getFileTypeFromFieldName(fieldName);
+                                    if (fileType && selectedApplication.applicationID) {
+                                      try {
+                                        finalFileUrl = filePreviewService.getPreviewUrl('application-file', selectedApplication.applicationID, fileType);
+                                      } catch (error) {
+                                        console.warn('Error getting authenticated URL for single file:', error);
+                                      }
+                                    }
+                                    // Fallback to storage URL
+                                    if (!finalFileUrl) {
+                                      const normalizedPath = normalizeFilePath(ensureStorageFolder(fileName || ''));
+                                      finalFileUrl = api.getStorageUrl(normalizedPath);
+                                    }
+                                  }
                                   
                                   return (
                                     <Box
@@ -2072,6 +2149,11 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
                                         <img 
                                           src={finalFileUrl} 
                                           alt="Preview" 
+                                          crossOrigin="anonymous"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleViewFile(fieldName);
+                                          }}
                                           onError={(e) => {
                                             e.target.style.display = 'none';
                                             // Show placeholder text if image fails to load
@@ -2655,6 +2737,105 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
             }}
           >
             Confirm Rejection
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Image Preview Modal */}
+      <Dialog
+        open={imagePreviewOpen}
+        onClose={handleCloseImagePreview}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{
+          sx: {
+            maxHeight: '90vh',
+            bgcolor: '#000'
+          }
+        }}
+      >
+        <DialogTitle
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            bgcolor: '#000',
+            color: '#fff',
+            borderBottom: '1px solid #333'
+          }}
+        >
+          <Typography variant="h6" sx={{ color: '#fff' }}>
+            {previewImageTitle}
+          </Typography>
+          <IconButton
+            onClick={handleCloseImagePreview}
+            sx={{ color: '#fff' }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent
+          sx={{
+            p: 0,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            bgcolor: '#000',
+            minHeight: '60vh',
+            maxHeight: '80vh',
+            overflow: 'auto'
+          }}
+        >
+          {previewImageUrl && (
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                width: '100%',
+                height: '100%',
+                p: 2
+              }}
+            >
+              <img
+                src={previewImageUrl}
+                alt={previewImageTitle}
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '80vh',
+                  objectFit: 'contain',
+                  borderRadius: '4px'
+                }}
+                crossOrigin="anonymous"
+                onError={(e) => {
+                  console.error('Error loading image:', e);
+                  toastService.error('Failed to load image');
+                  handleCloseImagePreview();
+                }}
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions
+          sx={{
+            bgcolor: '#000',
+            borderTop: '1px solid #333',
+            p: 2
+          }}
+        >
+          <Button
+            onClick={handleCloseImagePreview}
+            variant="contained"
+            sx={{
+              bgcolor: '#6C757D',
+              color: '#fff',
+              textTransform: 'none',
+              '&:hover': {
+                bgcolor: '#5A6268'
+              }
+            }}
+          >
+            Close
           </Button>
         </DialogActions>
       </Dialog>

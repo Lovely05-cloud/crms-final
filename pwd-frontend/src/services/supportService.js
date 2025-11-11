@@ -1,6 +1,7 @@
 // src/services/supportService.js
 import { api } from './api';
 import { API_CONFIG } from '../config/production';
+import toastService from './toastService';
 
 const API_BASE_URL = API_CONFIG.API_BASE_URL;
 
@@ -20,38 +21,92 @@ async function getStoredToken() {
 
 export const supportService = {
   // Get all support tickets (role-based)
-  getTickets: () => api.get('/support-tickets'),
+  getTickets: async () => {
+    try {
+      return await api.get('/support-tickets');
+    } catch (error) {
+      console.error('Error fetching support tickets:', error);
+      toastService.error('Failed to fetch support tickets: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Get archived support tickets (role-based)
-  getArchivedTickets: () => api.get('/support-tickets/archived'),
+  getArchivedTickets: async () => {
+    try {
+      return await api.get('/support-tickets/archived');
+    } catch (error) {
+      console.error('Error fetching archived tickets:', error);
+      toastService.error('Failed to fetch archived tickets: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Get a specific ticket by ID
-  getTicket: (id) => api.get(`/support-tickets/${id}`),
+  getTicket: async (id) => {
+    try {
+      return await api.get(`/support-tickets/${id}`);
+    } catch (error) {
+      console.error('Error fetching support ticket:', error);
+      toastService.error('Failed to fetch support ticket: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Create a new support ticket (PWD members only)
-  createTicket: (ticketData, file = null) => {
-    const formData = new FormData();
-    formData.append('subject', ticketData.subject);
-    formData.append('description', ticketData.description);
-    formData.append('priority', ticketData.priority || 'medium');
-    formData.append('category', ticketData.category || 'General');
-    
-    if (file) {
-      formData.append('attachment', file);
+  createTicket: async (ticketData, file = null) => {
+    try {
+      const formData = new FormData();
+      formData.append('subject', ticketData.subject);
+      formData.append('description', ticketData.description);
+      formData.append('priority', ticketData.priority || 'medium');
+      formData.append('category', ticketData.category || 'General');
+      
+      if (file) {
+        formData.append('attachment', file);
+      }
+      
+      // Don't set Content-Type manually - browser will set it with boundary automatically
+      return await api.post('/support-tickets', formData);
+    } catch (error) {
+      console.error('Error creating support ticket:', error);
+      toastService.error('Failed to create support ticket: ' + (error.message || 'Unknown error'));
+      throw error;
     }
-    
-    // Don't set Content-Type manually - browser will set it with boundary automatically
-    return api.post('/support-tickets', formData);
   },
   
   // Update a support ticket
-  updateTicket: (id, updateData) => api.put(`/support-tickets/${id}`, updateData),
+  updateTicket: async (id, updateData) => {
+    try {
+      return await api.put(`/support-tickets/${id}`, updateData);
+    } catch (error) {
+      console.error('Error updating support ticket:', error);
+      toastService.error('Failed to update support ticket: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Patch a support ticket (for status updates)
-  patchTicket: (id, updateData) => api.patch(`/support-tickets/${id}`, updateData),
+  patchTicket: async (id, updateData) => {
+    try {
+      return await api.patch(`/support-tickets/${id}`, updateData);
+    } catch (error) {
+      console.error('Error updating support ticket status:', error);
+      toastService.error('Failed to update support ticket status: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Delete a support ticket (admin only)
-  deleteTicket: (id) => api.delete(`/support-tickets/${id}`),
+  deleteTicket: async (id) => {
+    try {
+      return await api.delete(`/support-tickets/${id}`);
+    } catch (error) {
+      console.error('Error deleting support ticket:', error);
+      toastService.error('Failed to delete support ticket: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
+  },
   
   // Download attachment from a message
   downloadAttachment: async (messageId) => {
@@ -98,6 +153,7 @@ export const supportService = {
       return newBlob;
     } catch (error) {
       console.error('Error in downloadAttachment:', error);
+      toastService.error('Failed to download attachment: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -114,50 +170,114 @@ export const supportService = {
     });
     
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorMessage = `HTTP error! status: ${response.status}`;
+      toastService.error('Failed to force download attachment: ' + errorMessage);
+      throw new Error(errorMessage);
     }
     
     return response;
   },
 
   // Add a message to a support ticket
-  addMessage: (id, message, file = null) => {
-    const formData = new FormData();
-    formData.append('message', message);
-    
-    if (file) {
-      formData.append('attachment', file);
+  addMessage: async (id, message, file = null) => {
+    try {
+      const formData = new FormData();
+      formData.append('message', message);
+      
+      if (file) {
+        formData.append('attachment', file);
+      }
+      
+      // Don't set Content-Type manually - browser will set it with boundary automatically
+      return await api.post(`/support-tickets/${id}/messages`, formData);
+    } catch (error) {
+      console.error('Error adding message to support ticket:', error);
+      toastService.error('Failed to send message: ' + (error.message || 'Unknown error'));
+      throw error;
     }
-    
-    // Don't set Content-Type manually - browser will set it with boundary automatically
-    return api.post(`/support-tickets/${id}/messages`, formData);
   },
   
   // Admin-specific methods
   admin: {
     // Update ticket status
-    updateStatus: (id, status) => api.patch(`/support-tickets/${id}`, { status }),
+    updateStatus: async (id, status) => {
+      try {
+        return await api.patch(`/support-tickets/${id}`, { status });
+      } catch (error) {
+        console.error('Error updating ticket status:', error);
+        toastService.error('Failed to update ticket status: ' + (error.message || 'Unknown error'));
+        throw error;
+      }
+    },
     
     // Update ticket priority
-    updatePriority: (id, priority) => api.patch(`/support-tickets/${id}`, { priority }),
+    updatePriority: async (id, priority) => {
+      try {
+        return await api.patch(`/support-tickets/${id}`, { priority });
+      } catch (error) {
+        console.error('Error updating ticket priority:', error);
+        toastService.error('Failed to update ticket priority: ' + (error.message || 'Unknown error'));
+        throw error;
+      }
+    },
     
     // Mark ticket as resolved
-    markResolved: (id) => api.patch(`/support-tickets/${id}`, { status: 'resolved' }),
+    markResolved: async (id) => {
+      try {
+        return await api.patch(`/support-tickets/${id}`, { status: 'resolved' });
+      } catch (error) {
+        console.error('Error marking ticket as resolved:', error);
+        toastService.error('Failed to mark ticket as resolved: ' + (error.message || 'Unknown error'));
+        throw error;
+      }
+    },
     
     // Mark ticket as closed
-    markClosed: (id) => api.patch(`/support-tickets/${id}`, { status: 'closed' }),
+    markClosed: async (id) => {
+      try {
+        return await api.patch(`/support-tickets/${id}`, { status: 'closed' });
+      } catch (error) {
+        console.error('Error marking ticket as closed:', error);
+        toastService.error('Failed to mark ticket as closed: ' + (error.message || 'Unknown error'));
+        throw error;
+      }
+    },
     
     // Mark ticket as in progress
-    markInProgress: (id) => api.patch(`/support-tickets/${id}`, { status: 'in_progress' }),
+    markInProgress: async (id) => {
+      try {
+        return await api.patch(`/support-tickets/${id}`, { status: 'in_progress' });
+      } catch (error) {
+        console.error('Error marking ticket as in progress:', error);
+        toastService.error('Failed to mark ticket as in progress: ' + (error.message || 'Unknown error'));
+        throw error;
+      }
+    },
   },
   
   // PWD Member-specific methods
   pwdMember: {
     // Mark own ticket as resolved
-    markResolved: (id) => api.patch(`/support-tickets/${id}`, { status: 'resolved' }),
+    markResolved: async (id) => {
+      try {
+        return await api.patch(`/support-tickets/${id}`, { status: 'resolved' });
+      } catch (error) {
+        console.error('Error marking ticket as resolved:', error);
+        toastService.error('Failed to mark ticket as resolved: ' + (error.message || 'Unknown error'));
+        throw error;
+      }
+    },
     
     // Mark own ticket as closed
-    markClosed: (id) => api.patch(`/support-tickets/${id}`, { status: 'closed' }),
+    markClosed: async (id) => {
+      try {
+        return await api.patch(`/support-tickets/${id}`, { status: 'closed' });
+      } catch (error) {
+        console.error('Error marking ticket as closed:', error);
+        toastService.error('Failed to mark ticket as closed: ' + (error.message || 'Unknown error'));
+        throw error;
+      }
+    },
   },
   
   // Utility methods

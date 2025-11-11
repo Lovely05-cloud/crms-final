@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from '../services/api';
 import { enableAccessibilityForVisualImpairment } from '../utils/accessibilityHelper';
+import toastService from '../services/toastService';
 
 const AuthContext = createContext(null);
 
@@ -37,66 +38,78 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = async ({ username, password, captcha }) => {
-    console.log('Attempting login with:', { username, password, captcha });
-    const loginData = { username, password };
-    if (captcha) {
-      loginData.captcha = captcha;
-    }
-    const response = await api.post('/login', loginData, { auth: false });
-    console.log('Login response:', response);
-    const { user, access_token: accessToken } = response;
-    
-    console.log('User data:', user);
-    console.log('User role:', user.role);
-    
-    // If user is a Barangay President, extract their barangay information
-    if (user.role === 'BarangayPresident') {
-      // The barangay information is already included in the login response
-      if (user.barangayPresident && user.barangayPresident.barangay) {
-        user.barangay = user.barangayPresident.barangay;
-      } else {
-        // Fallback: extract barangay from username (e.g., bp_gulod -> Gulod)
-        const username = user.username || '';
-        if (username.startsWith('bp_')) {
-          const barangayName = username.replace('bp_', '').replace(/_/g, ' ');
-          // Capitalize first letter of each word
-          user.barangay = barangayName.split(' ').map(word => 
-            word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-          ).join(' ');
+    try {
+      console.log('Attempting login with:', { username, password, captcha });
+      const loginData = { username, password };
+      if (captcha) {
+        loginData.captcha = captcha;
+      }
+      const response = await api.post('/login', loginData, { auth: false });
+      console.log('Login response:', response);
+      const { user, access_token: accessToken } = response;
+      
+      console.log('User data:', user);
+      console.log('User role:', user.role);
+      
+      // If user is a Barangay President, extract their barangay information
+      if (user.role === 'BarangayPresident') {
+        // The barangay information is already included in the login response
+        if (user.barangayPresident && user.barangayPresident.barangay) {
+          user.barangay = user.barangayPresident.barangay;
         } else {
-          user.barangay = 'Banlic'; // Default fallback
+          // Fallback: extract barangay from username (e.g., bp_gulod -> Gulod)
+          const username = user.username || '';
+          if (username.startsWith('bp_')) {
+            const barangayName = username.replace('bp_', '').replace(/_/g, ' ');
+            // Capitalize first letter of each word
+            user.barangay = barangayName.split(' ').map(word => 
+              word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+            ).join(' ');
+          } else {
+            user.barangay = 'Banlic'; // Default fallback
+          }
         }
       }
+      
+      setCurrentUser(user);
+      localStorage.setItem('auth.currentUser', JSON.stringify(user));
+      localStorage.setItem('auth.token', JSON.stringify(accessToken));
+      await api.setToken(accessToken);
+      console.log('Login successful, user set:', user);
+      
+      // Automatically enable TTS and Read Aloud for visually impaired users
+      enableAccessibilityForVisualImpairment(user).catch(error => {
+        console.error('Error enabling accessibility features:', error);
+      });
+      
+      return user;
+    } catch (error) {
+      console.error('Login error:', error);
+      toastService.error('Login failed: ' + (error.message || error.data?.message || 'Unknown error'));
+      throw error;
     }
-    
-    setCurrentUser(user);
-    localStorage.setItem('auth.currentUser', JSON.stringify(user));
-    localStorage.setItem('auth.token', JSON.stringify(accessToken));
-    await api.setToken(accessToken);
-    console.log('Login successful, user set:', user);
-    
-    // Automatically enable TTS and Read Aloud for visually impaired users
-    enableAccessibilityForVisualImpairment(user).catch(error => {
-      console.error('Error enabling accessibility features:', error);
-    });
-    
-    return user;
   };
 
   const register = async (payload) => {
-    const response = await api.post('/register', payload, { auth: false });
-    const { user, access_token: accessToken } = response;
-    setCurrentUser(user);
-    localStorage.setItem('auth.currentUser', JSON.stringify(user));
-    localStorage.setItem('auth.token', JSON.stringify(accessToken));
-    await api.setToken(accessToken);
-    
-    // Automatically enable TTS and Read Aloud for visually impaired users
-    enableAccessibilityForVisualImpairment(user).catch(error => {
-      console.error('Error enabling accessibility features:', error);
-    });
-    
-    return user;
+    try {
+      const response = await api.post('/register', payload, { auth: false });
+      const { user, access_token: accessToken } = response;
+      setCurrentUser(user);
+      localStorage.setItem('auth.currentUser', JSON.stringify(user));
+      localStorage.setItem('auth.token', JSON.stringify(accessToken));
+      await api.setToken(accessToken);
+      
+      // Automatically enable TTS and Read Aloud for visually impaired users
+      enableAccessibilityForVisualImpairment(user).catch(error => {
+        console.error('Error enabling accessibility features:', error);
+      });
+      
+      return user;
+    } catch (error) {
+      console.error('Registration error:', error);
+      toastService.error('Registration failed: ' + (error.message || error.data?.message || 'Unknown error'));
+      throw error;
+    }
   };
 
   const logout = async () => {

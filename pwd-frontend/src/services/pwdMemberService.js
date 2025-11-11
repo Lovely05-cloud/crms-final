@@ -1,5 +1,6 @@
 // src/services/pwdMemberService.js
 import { api } from './api';
+import toastService from './toastService';
 
 const pwdMemberService = {
   // Get all PWD members
@@ -10,6 +11,7 @@ const pwdMemberService = {
       return response;
     } catch (error) {
       console.error('Error fetching PWD members:', error);
+      toastService.error('Failed to fetch PWD members: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -26,6 +28,7 @@ const pwdMemberService = {
       return response;
     } catch (error) {
       console.error('Error fetching PWD member:', error);
+      toastService.error('Failed to fetch PWD member: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -37,6 +40,7 @@ const pwdMemberService = {
       return response;
     } catch (error) {
       console.error('Error creating PWD member:', error);
+      toastService.error('Failed to create PWD member: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -48,6 +52,7 @@ const pwdMemberService = {
       return response;
     } catch (error) {
       console.error('Error updating PWD member:', error);
+      toastService.error('Failed to update PWD member: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -59,6 +64,7 @@ const pwdMemberService = {
       return response;
     } catch (error) {
       console.error('Error deleting PWD member:', error);
+      toastService.error('Failed to delete PWD member: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -70,6 +76,7 @@ const pwdMemberService = {
       return response;
     } catch (error) {
       console.error('Error fetching PWD member applications:', error);
+      toastService.error('Failed to fetch PWD member applications: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -81,6 +88,7 @@ const pwdMemberService = {
       return response;
     } catch (error) {
       console.error('Error fetching PWD member complaints:', error);
+      toastService.error('Failed to fetch PWD member complaints: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -92,6 +100,7 @@ const pwdMemberService = {
       return response;
     } catch (error) {
       console.error('Error fetching PWD member benefit claims:', error);
+      toastService.error('Failed to fetch PWD member benefit claims: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -104,6 +113,7 @@ const pwdMemberService = {
       return response;
     } catch (error) {
       console.error('Error fetching filtered PWD members:', error);
+      toastService.error('Failed to fetch filtered PWD members: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -115,6 +125,7 @@ const pwdMemberService = {
       return response;
     } catch (error) {
       console.error('Error claiming card:', error);
+      toastService.error('Failed to claim PWD card: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -126,6 +137,7 @@ const pwdMemberService = {
       return response;
     } catch (error) {
       console.error('Error renewing card:', error);
+      toastService.error('Failed to renew PWD card: ' + (error.message || 'Unknown error'));
       throw error;
     }
   }

@@ -13,13 +13,15 @@ import {
   FormControl,
   InputLabel,
   Select,
-  MenuItem
+  MenuItem,
+  TextField
 } from '@mui/material';
 import {
   Close as CloseIcon,
   QrCodeScanner as ScannerIcon,
   CameraAlt as CameraIcon,
-  FlipCameraAndroid as FlipCameraIcon
+  FlipCameraAndroid as FlipCameraIcon,
+  PhotoCamera as PhotoCameraIcon
 } from '@mui/icons-material';
 import { Html5Qrcode } from 'html5-qrcode';
 import QRCodeService from '../../services/qrCodeService';
@@ -27,6 +29,7 @@ import benefitService from '../../services/benefitService';
 import toastService from '../../services/toastService';
 import api from '../../services/api';
 import pwdMemberService from '../../services/pwdMemberService';
+import MobileCamera from '../shared/MobileCamera';
 
 // Set up global error handler immediately to catch camera errors
 if (typeof window !== 'undefined') {
@@ -158,6 +161,16 @@ const QRScanner = ({ open, onClose, onScanSuccess, onScanError }) => {
   const scannerContainerRef = useRef(null);
   const html5QrcodeScannerRef = useRef(null);
   const isMobile = isMobileDevice(); // Detect mobile device
+  
+  // Claim modal states
+  const [showClaimModal, setShowClaimModal] = useState(false);
+  const [scannedMemberData, setScannedMemberData] = useState(null);
+  const [claimantType, setClaimantType] = useState('');
+  const [claimantName, setClaimantName] = useState('');
+  const [claimantRelation, setClaimantRelation] = useState('');
+  const [authorizationLetter, setAuthorizationLetter] = useState(null);
+  const [authorizationLetterPreview, setAuthorizationLetterPreview] = useState(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -489,140 +502,33 @@ const QRScanner = ({ open, onClose, onScanSuccess, onScanError }) => {
           stopScanner();
         }, isMobile ? 200 : 100);
         
-        // Process benefit claim
-        try {
-          const requestData = {
-            memberId: validation.data.memberId || validation.data.userID,
-            pwdId: validation.data.pwdId || validation.data.pwd_id,
-            // Include QR code hash for verification (if available)
-            qrCodeHash: validation.data.qrCodeHash || validation.data.qr_code_hash
-          };
-          
-          console.log('Sending claim request:', requestData);
-          
-          // If a benefit is selected, only claim that specific benefit
-          if (selectedBenefitId) {
-            requestData.benefitID = selectedBenefitId;
-          }
-          
-          const response = await api.post('/qr-scan/claim-benefits', requestData);
-          console.log('Claim response:', response);
-          
-          if (response.success) {
-            // Enhanced success message with more details
-            const benefitsClaimed = response.benefitsClaimed || 0;
-            const memberName = response.member ? `${response.member.firstName} ${response.member.lastName}` : 'Member';
-            const benefitNames = response.benefits && response.benefits.length > 0
-              ? response.benefits.map(b => b.title || b.type || 'Benefit').join(', ')
-              : '';
-            
-            let successMessage = `✅ Success! ${benefitsClaimed} benefit(s) claimed for ${memberName}`;
-            if (benefitNames && benefitsClaimed > 0) {
-              successMessage += `\n\nBenefits: ${benefitNames}`;
-            }
-            
-            // Show green success toast
-            toastService.success(successMessage, 5000);
-            
-            if (onScanSuccess) {
-              onScanSuccess({
-                ...validation.data,
-                member: response.member,
-                benefits: response.benefits || [],
-                benefitsClaimed: benefitsClaimed
-              });
-            }
-            // Close scanner after successful claim
-            setTimeout(() => {
-              handleClose();
-            }, 2500);
-          } else if (response.error) {
-            const errorMsg = response.error || 'Failed to claim benefits';
-            
-            // Build user-friendly error message
-            let userFriendlyMsg = errorMsg;
-            if (response.debug) {
-              // Provide specific guidance based on debug info
-              if (response.debug.dateEligible === false) {
-                if (response.debug.distributionDate && response.debug.distributionDate !== 'N/A') {
-                  const distDate = new Date(response.debug.distributionDate);
-                  const today = new Date();
-                  if (distDate > today) {
-                    userFriendlyMsg = `This benefit is not yet available. Distribution starts on ${distDate.toLocaleDateString()}.`;
-                  }
-                }
-                if (response.debug.expiryDate && response.debug.expiryDate !== 'N/A') {
-                  const expDate = new Date(response.debug.expiryDate);
-                  const today = new Date();
-                  if (expDate < today) {
-                    userFriendlyMsg = `This benefit has expired. Expiry date was ${expDate.toLocaleDateString()}.`;
-                  }
-                }
-              }
-              if (response.debug.barangayEligible === false && !userFriendlyMsg.includes('not yet available') && !userFriendlyMsg.includes('expired')) {
-                userFriendlyMsg = 'Member is not eligible for this benefit due to barangay restrictions.';
-              }
-            }
-            
-            // Build debug info if available (for developers)
-            const debugInfo = response.debug ? `\n\nDebug Info:\n${JSON.stringify(response.debug, null, 2)}` : '';
-            console.error('Claim error:', errorMsg, response.debug);
-            setError(`${userFriendlyMsg}${debugInfo}`);
-            toastService.error(userFriendlyMsg);
-            if (onScanError) {
-              onScanError(new Error(userFriendlyMsg));
-            }
-          } else {
-            // Response doesn't have success or error - might be a different format
-            console.warn('Unexpected response format:', response);
-            const errorMsg = 'Unexpected response from server. Please check console for details.';
-            setError(errorMsg);
-            toastService.error(errorMsg);
-            if (onScanError) {
-              onScanError(new Error('Unexpected response format'));
-            }
-          }
-        } catch (apiError) {
-          console.error('Error claiming benefits:', apiError);
-          
-          // Handle different error formats from API service
-          let errorMsg = 'Failed to claim benefits. Please try again.';
-          let errorData = null;
-          
-          // API service throws errors with error.data or error.message
-          if (apiError.data) {
-            errorData = apiError.data;
-            // Check for validation errors
-            if (errorData.errors) {
-              const validationErrors = Object.values(errorData.errors).flat();
-              errorMsg = validationErrors.join(', ') || 'Validation error';
-            } else if (errorData.error) {
-              errorMsg = errorData.error;
-            } else if (errorData.message) {
-              errorMsg = errorData.message;
-            }
-          } else if (apiError.message) {
-            errorMsg = apiError.message;
-          }
-          
-          // Check for specific error status codes
-          if (apiError.status === 404) {
-            errorMsg = 'Member not found. Please ensure the QR code is valid.';
-          } else if (apiError.status === 403) {
-            errorMsg = errorData?.error || 'Invalid QR code or unauthorized access.';
-          } else if (apiError.status === 400) {
-            errorMsg = errorData?.error || errorMsg;
-          }
-          
-          const fullError = `${errorMsg}\n\nRaw Error: ${JSON.stringify(errorData || apiError, null, 2)}`;
-          setError(fullError);
-          toastService.error(errorMsg);
-          if (onScanError) {
-            onScanError(new Error(errorMsg));
-          }
-        } finally {
-          setLoading(false);
+        // Store scanned member data and show claim modal
+        // Extract memberId (should be userID)
+        const memberId = validation.data.memberId || validation.data.userID;
+        // Extract pwdId (should be database id, fallback to pwd_id if needed)
+        let pwdId = validation.data.pwdId || validation.data.pwd_id;
+        // If pwdId is still undefined, try to get it from pwd_id
+        if (!pwdId && validation.data.pwd_id) {
+          pwdId = validation.data.pwd_id;
         }
+        // If still undefined, use memberId as fallback (but this shouldn't happen)
+        if (!pwdId) {
+          pwdId = memberId;
+        }
+        
+        console.log('QR Code scanned data:', {
+          validationData: validation.data,
+          extractedMemberId: memberId,
+          extractedPwdId: pwdId
+        });
+        
+        setScannedMemberData({
+          memberId: memberId,
+          pwdId: pwdId,
+          qrCodeHash: validation.data.qrCodeHash || validation.data.qr_code_hash || validation.data.checksum || ''
+        });
+        setShowClaimModal(true);
+        setLoading(false);
       } else {
         const errorMsg = validation.error || 'Invalid QR code format';
         console.error('QR code validation failed:', errorMsg);
@@ -655,7 +561,131 @@ const QRScanner = ({ open, onClose, onScanSuccess, onScanError }) => {
     setError(null);
     setShowBenefitSelection(true);
     setSelectedBenefitId('');
+    setShowClaimModal(false);
+    setScannedMemberData(null);
+    setClaimantType('');
+    setClaimantName('');
+    setClaimantRelation('');
+    setAuthorizationLetter(null);
+    setAuthorizationLetterPreview(null);
     onClose();
+  };
+
+  const handleClaimSubmit = async () => {
+    if (!claimantType) {
+      toastService.error('Please select who will be claiming the card');
+      return;
+    }
+
+    if (claimantType === 'Others' && (!claimantName || !claimantRelation || !authorizationLetter)) {
+      toastService.error('Please fill in all fields and take a picture of the authorization letter');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      // Prepare request data
+      const requestData = {
+        memberId: scannedMemberData.memberId,
+        pwdId: scannedMemberData.pwdId,
+        qrCodeHash: scannedMemberData.qrCodeHash || scannedMemberData.checksum || '',
+        claimantType: claimantType,
+        claimantName: claimantType === 'Others' ? claimantName : null,
+        claimantRelation: claimantType === 'Others' ? claimantRelation : null
+      };
+
+      // If a benefit is selected, only claim that specific benefit
+      if (selectedBenefitId) {
+        requestData.benefitID = selectedBenefitId;
+      }
+
+      // Create FormData if authorization letter exists
+      let formData = null;
+      if (authorizationLetter) {
+        formData = new FormData();
+        Object.keys(requestData).forEach(key => {
+          const value = requestData[key];
+          // Always append, even if null or empty string
+          formData.append(key, value !== null && value !== undefined ? value : '');
+        });
+        formData.append('authorizationLetter', authorizationLetter);
+      }
+
+      console.log('Sending claim request:', {
+        ...requestData,
+        scannedMemberData: scannedMemberData
+      });
+      
+      const response = formData 
+        ? await api.post('/qr-scan/claim-benefits', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          })
+        : await api.post('/qr-scan/claim-benefits', requestData);
+      
+      console.log('Claim response:', response);
+
+      if (response.success) {
+        // Enhanced success message with more details
+        const benefitsClaimed = response.benefitsClaimed || 0;
+        const memberName = response.member ? `${response.member.firstName} ${response.member.lastName}` : 'Member';
+        const benefitNames = response.benefits && response.benefits.length > 0
+          ? response.benefits.map(b => b.title || b.type || 'Benefit').join(', ')
+          : '';
+        
+        let successMessage = `✅ Success! ${benefitsClaimed} benefit(s) claimed for ${memberName}`;
+        if (benefitNames && benefitsClaimed > 0) {
+          successMessage += `\n\nBenefits: ${benefitNames}`;
+        }
+        
+        // Show green success toast
+        toastService.success(successMessage, 5000);
+        
+        if (onScanSuccess) {
+          onScanSuccess({
+            ...scannedMemberData,
+            member: response.member,
+            benefits: response.benefits || [],
+            benefitsClaimed: benefitsClaimed
+          });
+        }
+        
+        // Close modal and scanner after successful claim
+        setShowClaimModal(false);
+        setTimeout(() => {
+          handleClose();
+        }, 2500);
+      } else if (response.error) {
+        const errorMsg = response.error || 'Failed to claim benefits';
+        toastService.error(errorMsg);
+        setError(errorMsg);
+      } else {
+        const errorMsg = 'Unexpected response from server. Please check console for details.';
+        setError(errorMsg);
+        toastService.error(errorMsg);
+      }
+    } catch (apiError) {
+      console.error('Error claiming benefits:', apiError);
+      let errorMsg = 'Failed to claim benefits. Please try again.';
+      if (apiError.data?.error) {
+        errorMsg = apiError.data.error;
+      } else if (apiError.message) {
+        errorMsg = apiError.message;
+      }
+      setError(errorMsg);
+      toastService.error(errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCameraCapture = (file) => {
+    setAuthorizationLetter(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setAuthorizationLetterPreview(reader.result);
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleRetry = () => {
@@ -673,7 +703,8 @@ const QRScanner = ({ open, onClose, onScanSuccess, onScanError }) => {
         fullWidth
         PaperProps={{
           sx: {
-            borderRadius: 3,
+            borderRadius: 2,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
             bgcolor: 'white'
           }
         }}
@@ -682,25 +713,36 @@ const QRScanner = ({ open, onClose, onScanSuccess, onScanError }) => {
           display: 'flex', 
           justifyContent: 'space-between', 
           alignItems: 'center',
-          bgcolor: '#E67E22',
-          color: 'white',
-          pb: 2
+          bgcolor: '#FFFFFF',
+          color: '#2C3E50',
+          fontWeight: 600,
+          borderBottom: '1px solid #E0E0E0',
+          pb: 2,
+          pt: 3,
+          px: 3
         }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="h6" sx={{ fontWeight: 700 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Typography variant="h6" sx={{ fontWeight: 600, color: '#2C3E50' }}>
               🎁 Select Benefit to Claim
             </Typography>
           </Box>
           <IconButton 
             onClick={onClose}
-            sx={{ color: 'white' }}
+            size="small"
+            sx={{ 
+              color: '#7F8C8D',
+              '&:hover': {
+                bgcolor: 'rgba(0, 0, 0, 0.04)',
+                color: '#2C3E50'
+              }
+            }}
           >
             <CloseIcon />
           </IconButton>
         </DialogTitle>
 
-        <DialogContent sx={{ p: 3 }}>
-          <Typography variant="body1" sx={{ mb: 3, color: '#2C3E50' }}>
+        <DialogContent sx={{ p: 3, bgcolor: '#FFFFFF' }}>
+          <Typography variant="body1" sx={{ mb: 3, color: '#2C3E50', lineHeight: 1.6 }}>
             Please select a benefit to claim before scanning the QR code. You can choose "All Eligible Benefits" to claim all available benefits for the member.
           </Typography>
 
@@ -720,14 +762,15 @@ const QRScanner = ({ open, onClose, onScanSuccess, onScanError }) => {
                 bgcolor: 'white',
                 fontSize: '1rem',
                 '& fieldset': {
-                  borderColor: '#E67E22',
-                  borderWidth: 2,
+                  borderColor: '#E0E0E0',
+                  borderWidth: 1,
                 },
                 '&:hover fieldset': {
-                  borderColor: '#D35400',
+                  borderColor: '#0b87ac',
                 },
                 '&.Mui-focused fieldset': {
-                  borderColor: '#E67E22',
+                  borderColor: '#0b87ac',
+                  borderWidth: 2,
                 },
               },
               '& .MuiInputLabel-root': {
@@ -735,7 +778,7 @@ const QRScanner = ({ open, onClose, onScanSuccess, onScanError }) => {
                 fontSize: '1rem',
               },
               '& .MuiInputLabel-root.Mui-focused': {
-                color: '#E67E22',
+                color: '#0b87ac',
               },
             }}>
               <InputLabel id="benefit-select-label">Choose Benefit</InputLabel>
@@ -785,8 +828,15 @@ const QRScanner = ({ open, onClose, onScanSuccess, onScanError }) => {
           )}
 
           {selectedBenefitId && (
-            <Box sx={{ mt: 3, p: 2, bgcolor: '#FFF8F0', borderRadius: 1, border: '1px solid #E67E22' }}>
-              <Typography variant="body2" sx={{ color: '#E67E22', fontWeight: 600, mb: 0.5 }}>
+            <Box sx={{ 
+              mt: 3, 
+              p: 2, 
+              bgcolor: '#F8F9FA', 
+              borderRadius: 1, 
+              border: '1px solid #E0E0E0',
+              borderLeft: '4px solid #0b87ac'
+            }}>
+              <Typography variant="body2" sx={{ color: '#0b87ac', fontWeight: 600, mb: 0.5 }}>
                 ⚠️ Selected Benefit:
               </Typography>
               <Typography variant="body2" sx={{ color: '#2C3E50' }}>
@@ -801,8 +851,15 @@ const QRScanner = ({ open, onClose, onScanSuccess, onScanError }) => {
           )}
 
           {!selectedBenefitId && benefitsLoaded && (
-            <Box sx={{ mt: 3, p: 2, bgcolor: '#F0F8FF', borderRadius: 1, border: '1px solid #3498DB' }}>
-              <Typography variant="body2" sx={{ color: '#3498DB', fontWeight: 600, mb: 0.5 }}>
+            <Box sx={{ 
+              mt: 3, 
+              p: 2, 
+              bgcolor: '#F8F9FA', 
+              borderRadius: 1, 
+              border: '1px solid #E0E0E0',
+              borderLeft: '4px solid #0b87ac'
+            }}>
+              <Typography variant="body2" sx={{ color: '#0b87ac', fontWeight: 600, mb: 0.5 }}>
                 ℹ️ Default Selection:
               </Typography>
               <Typography variant="body2" sx={{ color: '#2C3E50' }}>
@@ -812,16 +869,25 @@ const QRScanner = ({ open, onClose, onScanSuccess, onScanError }) => {
           )}
         </DialogContent>
 
-        <DialogActions sx={{ p: 3, pt: 0 }}>
+        <DialogActions sx={{ 
+          p: 3, 
+          pt: 2,
+          bgcolor: '#FFFFFF',
+          borderTop: '1px solid #E0E0E0',
+          gap: 1
+        }}>
           <Button
             onClick={onClose}
             variant="outlined"
             sx={{
-              borderColor: '#7F8C8D',
-              color: '#7F8C8D',
+              borderColor: '#E0E0E0',
+              color: '#2C3E50',
+              textTransform: 'none',
+              fontWeight: 500,
+              px: 3,
               '&:hover': {
-                borderColor: '#5D6D7E',
-                backgroundColor: 'rgba(127, 140, 141, 0.1)'
+                borderColor: '#7F8C8D',
+                backgroundColor: 'rgba(0, 0, 0, 0.04)'
               }
             }}
           >
@@ -832,9 +898,18 @@ const QRScanner = ({ open, onClose, onScanSuccess, onScanError }) => {
             variant="contained"
             disabled={!benefitsLoaded}
             sx={{
-              bgcolor: '#E67E22',
-              '&:hover': { bgcolor: '#D35400' },
-              px: 4
+              bgcolor: '#0b87ac',
+              color: '#FFFFFF',
+              textTransform: 'none',
+              fontWeight: 600,
+              px: 4,
+              '&:hover': { 
+                bgcolor: '#0a7699'
+              },
+              '&:disabled': {
+                bgcolor: '#E0E0E0',
+                color: '#7F8C8D'
+              }
             }}
           >
             Start Scanning QR Code
@@ -1085,6 +1160,207 @@ const QRScanner = ({ open, onClose, onScanSuccess, onScanError }) => {
         }
       `}</style>
     </Dialog>
+
+      {/* Claim Modal - Shows After QR Scan */}
+      <Dialog
+        open={showClaimModal}
+        onClose={() => setShowClaimModal(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+            bgcolor: 'white'
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          bgcolor: '#FFFFFF',
+          color: '#2C3E50',
+          fontWeight: 600,
+          borderBottom: '1px solid #E0E0E0',
+          pb: 2,
+          pt: 3,
+          px: 3
+        }}>
+          <Typography variant="h6" sx={{ fontWeight: 600, color: '#2C3E50' }}>
+            Who Will Be Claiming the Card?
+          </Typography>
+          <IconButton 
+            onClick={() => setShowClaimModal(false)}
+            size="small"
+            sx={{ 
+              color: '#7F8C8D',
+              '&:hover': {
+                bgcolor: 'rgba(0, 0, 0, 0.04)',
+                color: '#2C3E50'
+              }
+            }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ p: 3, bgcolor: '#FFFFFF' }}>
+          <FormControl fullWidth sx={{ mb: 3 }}>
+            <InputLabel id="claimant-type-label">Claimant Type</InputLabel>
+            <Select
+              labelId="claimant-type-label"
+              id="claimant-type"
+              value={claimantType}
+              label="Claimant Type"
+              onChange={(e) => setClaimantType(e.target.value)}
+              sx={{
+                bgcolor: 'white',
+                fontSize: '1rem',
+                '& .MuiSelect-select': {
+                  bgcolor: 'white',
+                  py: 1.5,
+                }
+              }}
+            >
+              <MenuItem value="Member">Member</MenuItem>
+              <MenuItem value="Guardian">Guardian</MenuItem>
+              <MenuItem value="Others">Others</MenuItem>
+            </Select>
+          </FormControl>
+
+          {claimantType === 'Others' && (
+            <Box sx={{ mt: 2 }}>
+              <TextField
+                fullWidth
+                label="Name"
+                value={claimantName}
+                onChange={(e) => setClaimantName(e.target.value)}
+                sx={{ mb: 2 }}
+                required
+              />
+              <TextField
+                fullWidth
+                label="Relation"
+                value={claimantRelation}
+                onChange={(e) => setClaimantRelation(e.target.value)}
+                sx={{ mb: 2 }}
+                required
+                placeholder="e.g., Brother, Sister, Friend"
+              />
+              
+              <Box sx={{ mb: 2 }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<PhotoCameraIcon />}
+                  onClick={() => setCameraOpen(true)}
+                  fullWidth
+                  sx={{
+                    py: 1.5,
+                    borderColor: authorizationLetter ? '#4CAF50' : '#E0E0E0',
+                    color: authorizationLetter ? '#4CAF50' : '#2C3E50',
+                    '&:hover': {
+                      borderColor: '#0b87ac',
+                      bgcolor: 'rgba(11, 135, 172, 0.04)'
+                    }
+                  }}
+                >
+                  {authorizationLetter ? 'Authorization Letter Captured' : 'Take Picture of Authorization Letter'}
+                </Button>
+              </Box>
+
+              {authorizationLetterPreview && (
+                <Box sx={{ 
+                  mt: 2, 
+                  p: 2, 
+                  border: '1px solid #E0E0E0', 
+                  borderRadius: 1,
+                  textAlign: 'center'
+                }}>
+                  <img 
+                    src={authorizationLetterPreview} 
+                    alt="Authorization Letter Preview" 
+                    style={{ 
+                      maxWidth: '100%', 
+                      maxHeight: '200px',
+                      borderRadius: '4px'
+                    }} 
+                  />
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      setAuthorizationLetter(null);
+                      setAuthorizationLetterPreview(null);
+                    }}
+                    sx={{ mt: 1 }}
+                  >
+                    Remove
+                  </Button>
+                </Box>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ 
+          p: 3, 
+          pt: 2,
+          bgcolor: '#FFFFFF',
+          borderTop: '1px solid #E0E0E0',
+          gap: 1
+        }}>
+          <Button
+            onClick={() => setShowClaimModal(false)}
+            variant="outlined"
+            sx={{
+              borderColor: '#E0E0E0',
+              color: '#2C3E50',
+              textTransform: 'none',
+              fontWeight: 500,
+              px: 3,
+              '&:hover': {
+                borderColor: '#7F8C8D',
+                backgroundColor: 'rgba(0, 0, 0, 0.04)'
+              }
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleClaimSubmit}
+            variant="contained"
+            disabled={loading}
+            sx={{
+              bgcolor: '#0b87ac',
+              color: '#FFFFFF',
+              textTransform: 'none',
+              fontWeight: 600,
+              px: 4,
+              '&:hover': { 
+                bgcolor: '#0a7699'
+              },
+              '&:disabled': {
+                bgcolor: '#E0E0E0',
+                color: '#7F8C8D'
+              }
+            }}
+          >
+            {loading ? <CircularProgress size={20} color="inherit" /> : 'Submit Claim'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Camera Dialog for Authorization Letter */}
+      <MobileCamera
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={handleCameraCapture}
+        onError={(err) => {
+          console.error('Camera error:', err);
+          toastService.error('Failed to access camera. Please try again.');
+        }}
+        title="Take Picture of Authorization Letter"
+      />
     </>
   );
 };

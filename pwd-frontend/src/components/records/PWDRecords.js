@@ -396,92 +396,116 @@ function PWDRecords() {
       if (!path) return '';
       return path.includes('/') ? path : `applications/${path}`;
     };
-    const handleViewFile = (fileType) => {
+
+    // Map field names to API fileType parameter
+    const getFileTypeFromFieldName = (fieldName) => {
+      const fieldToTypeMap = {
+        'medicalCertificate': 'medicalCertificate',
+        'barangayCertificate': 'barangayCertificate',
+        'clinicalAbstract': 'clinicalAbstract',
+        'voterCertificate': 'voterCertificate',
+        'birthCertificate': 'birthCertificate',
+        'wholeBodyPicture': 'wholeBodyPicture',
+        'affidavit': 'affidavit',
+        'idPictures': 'idPictures' // Special case - handled separately
+      };
+      return fieldToTypeMap[fieldName] || null;
+    };
+
+    // Map frontend field names to backend document type names that API accepts
+    const mapFieldNameToDocumentType = (fieldName) => {
+      const mapping = {
+        'medicalCertificate': 'medicalCertificate',
+        'clinicalAbstract': 'clinicalAbstract',
+        'voterCertificate': 'voterCertificate',
+        'birthCertificate': 'birthCertificate',
+        'wholeBodyPicture': 'wholeBodyPicture',
+        'affidavit': 'affidavit',
+        'barangayCertificate': 'barangayCertificate'
+      };
+      return mapping[fieldName] || null;
+    };
+
+    const handleViewFile = (fileType, fileIndex = 0) => {
       if (!selectedApplication) {
         console.error('No application selected');
         return;
       }
       
-      const fileName = selectedApplication[fileType];
-      if (!fileName) {
-        console.error('No file found for field:', fileType);
+      // Map field name to backend document type name
+      const documentType = mapFieldNameToDocumentType(fileType) || getFileTypeFromFieldName(fileType);
+      
+      if (!documentType) {
+        console.error(`Document type not supported for field: ${fileType}`);
+        toastService.error(`File preview not available for this document type`);
         return;
       }
-
-      // Handle JSON string (for arrays stored as strings)
-      let fileUrl = null;
-      let displayFileName = '';
       
-      if (typeof fileName === 'string') {
-        try {
-          const parsed = JSON.parse(fileName);
-          if (Array.isArray(parsed)) {
-            if (parsed.length > 0) {
-              const normalizedPath = normalizeFilePath(ensureStorageFolder(parsed[0]));
-              fileUrl = api.getStorageUrl(normalizedPath);
-            } else {
-              fileUrl = null;
+      // Get the file URL using authenticated endpoint
+      try {
+        // For idPictures arrays, pass the index parameter
+        const indexParam = (fileType === 'idPictures' || fileType.includes('idPicture')) ? fileIndex : null;
+        const fileUrl = filePreviewService.getPreviewUrl('application-file', selectedApplication.applicationID, documentType, indexParam);
+        
+        // Check if it's an image file by checking the field name
+        const fileName = selectedApplication[fileType];
+        let isImage = false;
+        
+        if (Array.isArray(fileName) || (typeof fileName === 'string' && fileName.startsWith('['))) {
+          // For arrays, check the file at the specified index
+          try {
+            const parsed = typeof fileName === 'string' ? JSON.parse(fileName) : fileName;
+            if (Array.isArray(parsed) && parsed[fileIndex]) {
+              isImage = isImageFile(parsed[fileIndex]);
             }
-            displayFileName = parsed.length > 0 ? parsed[0] : '';
-          } else {
-            const normalizedPath = normalizeFilePath(ensureStorageFolder(fileName));
-            fileUrl = api.getStorageUrl(normalizedPath);
-            displayFileName = fileName;
+          } catch (e) {
+            // Not an array, check the field name
+            isImage = isImageFile(fileType);
           }
-        } catch (e) {
-          // Not JSON, treat as regular string
-          const normalizedPath = normalizeFilePath(ensureStorageFolder(fileName));
-          fileUrl = api.getStorageUrl(normalizedPath);
-          displayFileName = fileName;
-        }
-      } else if (Array.isArray(fileName)) {
-        if (fileName.length > 0) {
-          const normalizedPath = normalizeFilePath(ensureStorageFolder(fileName[0]));
-          fileUrl = api.getStorageUrl(normalizedPath);
         } else {
-          fileUrl = null;
+          isImage = isImageFile(fileName);
         }
-        displayFileName = fileName.length > 0 ? fileName[0] : '';
-      }
-
-      if (fileUrl && isImageFile(displayFileName)) {
-        // Open image in modal (A4-style preview below)
-        handlePreviewImage(fileUrl, displayFileName);
-      } else {
-        // For non-image files, still use the file preview service
-        filePreviewService.openPreview('application-file', selectedApplication.applicationID, fileType);
+        
+        if (isImage) {
+          // Open in modal for images
+          handlePreviewImage(fileUrl, fileName || fileType);
+        } else {
+          // For non-images (PDFs, etc.), open in new tab
+          filePreviewService.openPreview('application-file', selectedApplication.applicationID, documentType);
+        }
+      } catch (error) {
+        console.error('Error getting file preview URL:', error);
+        toastService.error('Failed to load file preview');
       }
     };
 
-    // Get file URL for thumbnail display
-    const getFileUrl = (fieldName) => {
+    // Get file URL for thumbnail display - use authenticated API endpoint
+    const getFileUrl = (fieldName, index = null) => {
       if (!selectedApplication || !selectedApplication[fieldName]) return null;
       
-      const fileName = selectedApplication[fieldName];
-      
-      // Handle JSON string (for arrays stored as strings)
-      if (typeof fileName === 'string') {
+      // Always use authenticated API endpoint for thumbnails
+      const fileType = getFileTypeFromFieldName(fieldName);
+      if (fileType && selectedApplication.applicationID) {
         try {
-          const parsed = JSON.parse(fileName);
-          if (Array.isArray(parsed)) {
-            if (parsed.length === 0) return null;
-            const normalizedPath = normalizeFilePath(ensureStorageFolder(parsed[0]));
-            return api.getStorageUrl(normalizedPath);
-          } else {
-            const normalizedPath = normalizeFilePath(ensureStorageFolder(fileName));
-            return api.getStorageUrl(normalizedPath);
+          // For idPictures arrays, pass the index parameter
+          const indexParam = (fileType === 'idPictures' && index !== null) ? index : null;
+          const url = filePreviewService.getPreviewUrl('application-file', selectedApplication.applicationID, fileType, indexParam);
+          
+          // Validate that we got an authenticated URL (should contain /api/application-file/)
+          if (!url || !url.includes('/api/application-file/')) {
+            console.error('Invalid file URL - not using authenticated endpoint:', url);
+            return null;
           }
-        } catch (e) {
-          // Not JSON, treat as regular string
-          const normalizedPath = normalizeFilePath(ensureStorageFolder(fileName));
-          return api.getStorageUrl(normalizedPath);
+          
+          return url;
+        } catch (error) {
+          console.error('Error getting authenticated file URL:', error);
+          return null; // Don't fallback to storage URL - return null instead
         }
-      } else if (Array.isArray(fileName)) {
-        // Handle actual array
-        if (fileName.length === 0) return null;
-        const normalizedPath = normalizeFilePath(ensureStorageFolder(fileName[0]));
-        return api.getStorageUrl(normalizedPath);
       }
+      
+      // If fileType mapping fails, return null instead of using storage URL
+      console.warn(`File type mapping failed for field: ${fieldName}`);
       return null;
     };
 
@@ -2422,8 +2446,10 @@ function PWDRecords() {
                                     return (
                                       <Box sx={{ display: 'flex', gap: 0.5 }}>
                                         {parsedFiles.slice(0, 2).map((file, index) => {
-                                          const normalizedPath = normalizeFilePath(ensureStorageFolder(file));
-                                          const singleFileUrl = api.getStorageUrl(normalizedPath);
+                                          // Always use authenticated URL for thumbnails
+                                          const singleFileUrl = getFileUrl(fieldName, index);
+                                          const isImage = isImageFile(file);
+                                          
                                           return (
                                             <Box
                                               key={index}
@@ -2432,36 +2458,54 @@ function PWDRecords() {
                                                 height: 64,
                                                 borderRadius: 1,
                                                 overflow: 'hidden',
-                                                bgcolor: isImageFile(file) ? 'transparent' : '#0b87ac',
+                                                bgcolor: isImage && singleFileUrl ? 'transparent' : '#0b87ac',
                                                 display: 'flex',
                                                 alignItems: 'center',
                                                 justifyContent: 'center',
                                                 fontSize: '1rem',
                                                 color: 'white',
-                                                border: '1px solid #ddd'
+                                                border: '1px solid #ddd',
+                                                cursor: singleFileUrl ? 'pointer' : 'default',
+                                                opacity: singleFileUrl ? 1 : 0.6
                                               }}
                                               onClick={(e) => {
                                                 e.stopPropagation();
-                                                if (isImageFile(file)) {
-                                                  handlePreviewImage(singleFileUrl, file);
-                                                } else {
-                                                  handleViewFile(fieldName);
+                                                if (singleFileUrl) {
+                                                  handleViewFile(fieldName, index);
                                                 }
                                               }}
                                             >
-                                              {isImageFile(file) ? (
+                                              {isImage && singleFileUrl ? (
                                                 <img 
                                                   src={singleFileUrl} 
                                                   alt="Preview" 
+                                                  crossOrigin="anonymous"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (singleFileUrl) {
+                                                      handleViewFile(fieldName, index);
+                                                    }
+                                                  }}
                                                   style={{ 
                                                     width: '100%', 
                                                     height: '100%', 
-                                                    objectFit: 'cover' 
+                                                    objectFit: 'cover',
+                                                    cursor: 'pointer'
                                                   }}
-                                                  onError={(e) => { e.target.style.display = 'none'; }}
+                                                  onError={(e) => {
+                                                    console.error('Error loading thumbnail image:', e);
+                                                    e.target.style.display = 'none';
+                                                    const parent = e.target.parentElement;
+                                                    if (parent) {
+                                                      parent.innerHTML = '<span style="font-size: 0.8rem; color: white;">Preview</span>';
+                                                      parent.style.bgcolor = '#0b87ac';
+                                                    }
+                                                  }}
                                                 />
                                               ) : (
-                                                getFileIcon(file)
+                                                <Typography sx={{ fontSize: '0.7rem', color: 'white', textAlign: 'center' }}>
+                                                  {singleFileUrl ? getFileIcon(file) : 'N/A'}
+                                                </Typography>
                                               )}
                                             </Box>
                                           );
@@ -2485,35 +2529,65 @@ function PWDRecords() {
                                       </Box>
                                     );
                                   } else {
-                                    // Handle single file
+                                    // Handle single file - use authenticated URL
+                                    const finalFileUrl = fileUrl; // fileUrl is already from getFileUrl which uses authenticated endpoint
+                                    const isImage = isImageFile(fileName);
+                                    
                                     return (
                                       <Box
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (finalFileUrl) {
+                                            handleViewFile(fieldName);
+                                          }
+                                        }}
                                         sx={{ 
                                           width: 56, 
                                           height: 80,
                                           borderRadius: 1,
                                           overflow: 'hidden',
-                                          bgcolor: isImageFile(fileName) ? 'transparent' : '#0b87ac',
+                                          bgcolor: isImage && finalFileUrl ? 'transparent' : '#0b87ac',
                                           display: 'flex',
                                           alignItems: 'center',
                                           justifyContent: 'center',
                                           fontSize: '1.2rem',
                                           color: 'white',
-                                          border: '1px solid #ddd'
+                                          border: '1px solid #ddd',
+                                          cursor: finalFileUrl ? 'pointer' : 'default',
+                                          opacity: finalFileUrl ? 1 : 0.6
                                         }}
                                       >
-                                        {isImageFile(fileName) ? (
+                                        {isImage && finalFileUrl ? (
                                           <img 
-                                            src={fileUrl} 
+                                            src={finalFileUrl} 
                                             alt="Preview" 
+                                            crossOrigin="anonymous"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (finalFileUrl) {
+                                                handleViewFile(fieldName);
+                                              }
+                                            }}
                                             style={{ 
                                               width: '100%', 
                                               height: '100%', 
-                                              objectFit: 'cover' 
+                                              objectFit: 'cover',
+                                              cursor: 'pointer'
+                                            }}
+                                            onError={(e) => {
+                                              console.error('Error loading thumbnail image:', e);
+                                              e.target.style.display = 'none';
+                                              const parent = e.target.parentElement;
+                                              if (parent && !parent.textContent.includes('Preview')) {
+                                                parent.innerHTML = '<span style="font-size: 0.7rem; color: white; text-align: center; padding: 5px;">Preview</span>';
+                                                parent.style.bgcolor = '#0b87ac';
+                                              }
                                             }}
                                           />
                                         ) : (
-                                          getFileIcon(fileName)
+                                          <Typography sx={{ fontSize: '0.7rem', color: 'white', textAlign: 'center' }}>
+                                            {finalFileUrl ? getFileIcon(fileName) : 'N/A'}
+                                          </Typography>
                                         )}
                                       </Box>
                                     );
@@ -2980,6 +3054,7 @@ function PWDRecords() {
                  <img
                    src={previewImageUrl}
                    alt={previewFileName}
+                   crossOrigin="anonymous"
                    style={{
                      maxWidth: '100%',
                      maxHeight: '100%',
@@ -2989,7 +3064,8 @@ function PWDRecords() {
                    }}
                    onError={(e) => {
                      console.error('Error loading image:', previewImageUrl);
-                     e.target.style.display = 'none';
+                     toastService.error('Failed to load image');
+                     handleClosePreviewModal();
                    }}
                  />
                </Box>

@@ -1,5 +1,6 @@
 // pwd-frontend/src/services/documentService.js
 import { api } from './api';
+import toastService from './toastService';
 
 class DocumentService {
   /**
@@ -24,6 +25,7 @@ class DocumentService {
       }
     } catch (error) {
       console.error('Error fetching document types:', error);
+      toastService.error('Failed to fetch document types: ' + (error.message || 'Unknown error'));
       // Return fallback document types if API fails
       return this.getFallbackDocumentTypes();
     }

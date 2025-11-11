@@ -16,7 +16,11 @@ class BenefitClaim extends Model
         'pwdID',
         'benefitID',
         'claimDate',
-        'status'
+        'status',
+        'claimantType',
+        'claimantName',
+        'claimantRelation',
+        'authorizationLetter'
     ];
 
     protected $casts = [

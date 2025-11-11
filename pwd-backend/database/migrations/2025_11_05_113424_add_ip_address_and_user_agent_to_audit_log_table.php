@@ -14,8 +14,12 @@ return new class extends Migration
     public function up()
     {
         Schema::table('audit_log', function (Blueprint $table) {
-            $table->string('ip_address', 45)->nullable()->after('action');
-            $table->string('user_agent', 255)->nullable()->after('ip_address');
+            if (!Schema::hasColumn('audit_log', 'ip_address')) {
+                $table->string('ip_address', 45)->nullable();
+            }
+            if (!Schema::hasColumn('audit_log', 'user_agent')) {
+                $table->string('user_agent', 255)->nullable();
+            }
         });
     }
 

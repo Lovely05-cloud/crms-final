@@ -27,8 +27,15 @@ const DEVELOPMENT_CONFIG = {
   STORAGE_BASE_URL: 'http://127.0.0.1:8000',
 };
 
-// Export development configuration for local testing
-export const API_CONFIG = DEVELOPMENT_CONFIG;
+// Cloudflare Tunnel Configuration (for accessing from other devices)
+const CLOUDFLARE_TUNNEL_CONFIG = {
+  // Backend API through Cloudflare tunnel
+  API_BASE_URL: 'https://lady-amended-fields-council.trycloudflare.com/api',
+  STORAGE_BASE_URL: 'https://lady-amended-fields-council.trycloudflare.com',
+};
+
+// Export configuration - Change this to CLOUDFLARE_TUNNEL_CONFIG when using Cloudflare tunnels
+export const API_CONFIG = CLOUDFLARE_TUNNEL_CONFIG;
 
 // Instructions for updating:
 // 1. Replace 'yourdomain.com' with your actual Hostinger domain

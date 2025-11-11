@@ -1,4 +1,5 @@
 import { api } from './api';
+import toastService from './toastService';
 
 class FilePreviewService {
   /**
@@ -59,6 +60,7 @@ class FilePreviewService {
       return { success: true, url };
     } catch (error) {
       console.error('Error opening file preview:', error);
+      toastService.error('Failed to open file preview: ' + (error.message || 'Unknown error'));
       throw error;
     }
   }
@@ -69,29 +71,49 @@ class FilePreviewService {
    * @param {string|number} id - File ID
    * @param {string} fileType - File type (for application files)
    */
-  getPreviewUrl(type, id, fileType = null) {
-    const url = api.getFilePreviewUrl(type, id, fileType);
-    if (!url) {
-      throw new Error('Invalid file preview type');
-    }
-
-    // Add authentication token to URL if available
-    const token = localStorage.getItem('auth.token');
-    if (token) {
-      try {
-        const tokenData = JSON.parse(token);
-        // Token is stored as a string, not an object with .token property
-        const tokenValue = typeof tokenData === 'string' ? tokenData : tokenData.token;
-        if (tokenValue) {
-          const separator = url.includes('?') ? '&' : '?';
-          return `${url}${separator}token=${tokenValue}`;
-        }
-      } catch (error) {
-        console.warn('Error parsing auth token:', error);
+  getPreviewUrl(type, id, fileType = null, index = null) {
+    try {
+      const url = api.getFilePreviewUrl(type, id, fileType);
+      if (!url) {
+        toastService.error('Invalid file preview type');
+        throw new Error('Invalid file preview type');
       }
-    }
 
-    return url;
+      // Build URL with query parameters
+      let finalUrl = url;
+      const params = [];
+      
+      // Add authentication token to URL if available
+      const token = localStorage.getItem('auth.token');
+      if (token) {
+        try {
+          const tokenData = JSON.parse(token);
+          // Token is stored as a string, not an object with .token property
+          const tokenValue = typeof tokenData === 'string' ? tokenData : tokenData.token;
+          if (tokenValue) {
+            params.push(`token=${tokenValue}`);
+          }
+        } catch (error) {
+          console.warn('Error parsing auth token:', error);
+        }
+      }
+      
+      // Add index parameter for idPictures arrays
+      if (index !== null && index !== undefined) {
+        params.push(`index=${index}`);
+      }
+      
+      if (params.length > 0) {
+        const separator = url.includes('?') ? '&' : '?';
+        finalUrl = `${url}${separator}${params.join('&')}`;
+      }
+
+    return finalUrl;
+    } catch (error) {
+      console.error('Error getting preview URL:', error);
+      toastService.error('Failed to get preview URL: ' + (error.message || 'Unknown error'));
+      throw error;
+    }
   }
 
   /**
@@ -137,6 +159,7 @@ class FilePreviewService {
       return { success: true };
     } catch (error) {
       console.error('Error downloading file:', error);
+      toastService.error('Failed to download file: ' + (error.message || 'Unknown error'));
       throw error;
     }
   }

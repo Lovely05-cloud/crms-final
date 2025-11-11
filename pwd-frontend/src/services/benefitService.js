@@ -1,6 +1,7 @@
 // src/services/benefitService.js
 
 import { api } from './api';
+import toastService from './toastService';
 
 const benefitService = {
   // Get all benefits
@@ -10,6 +11,7 @@ const benefitService = {
       return response;
     } catch (error) {
       console.error('Error fetching benefits:', error);
+      toastService.error('Failed to fetch benefits: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -21,6 +23,7 @@ const benefitService = {
       return response;
     } catch (error) {
       console.error('Error fetching benefit:', error);
+      toastService.error('Failed to fetch benefit: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -32,6 +35,7 @@ const benefitService = {
       return response;
     } catch (error) {
       console.error('Error creating benefit:', error);
+      toastService.error('Failed to create benefit: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -43,6 +47,7 @@ const benefitService = {
       return response;
     } catch (error) {
       console.error('Error updating benefit:', error);
+      toastService.error('Failed to update benefit: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -54,6 +59,7 @@ const benefitService = {
       return response;
     } catch (error) {
       console.error('Error deleting benefit:', error);
+      toastService.error('Failed to delete benefit: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -65,6 +71,7 @@ const benefitService = {
       return response;
     } catch (error) {
       console.error('Error fetching benefit claims:', error);
+      toastService.error('Failed to fetch benefit claims: ' + (error.message || 'Unknown error'));
       throw error;
     }
   }

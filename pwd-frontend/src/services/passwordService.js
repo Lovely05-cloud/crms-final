@@ -1,5 +1,6 @@
 // src/services/passwordService.js
 import api from './api';
+import toastService from './toastService';
 
 const passwordService = {
   // Reset password without authentication (forgot password)
@@ -12,6 +13,8 @@ const passwordService = {
       });
       return response.data;
     } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to reset password';
+      toastService.error('Password reset failed: ' + errorMessage);
       throw error.response?.data || { error: 'Failed to reset password' };
     }
   },
@@ -26,6 +29,8 @@ const passwordService = {
       });
       return response.data;
     } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to change password';
+      toastService.error('Password change failed: ' + errorMessage);
       throw error.response?.data || { error: 'Failed to change password' };
     }
   },
@@ -40,6 +45,7 @@ const passwordService = {
       // Find the user by email
       const user = users.find(u => u.email === email);
       if (!user) {
+        toastService.error('User not found with the provided email');
         throw new Error('User not found with the provided email');
       }
       
@@ -50,6 +56,8 @@ const passwordService = {
       
       return response;
     } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to reset user password';
+      toastService.error('Admin password reset failed: ' + errorMessage);
       throw error.response?.data || { error: 'Failed to reset user password' };
     }
   }

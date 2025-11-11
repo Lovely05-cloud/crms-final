@@ -48,18 +48,42 @@ const QRCodeDisplay = ({ open, onClose, member, onScan }) => {
     try {
       if (!member) return;
 
-      // Create QR code data with member information
-      const qrData = {
-        pwd_id: member.pwd_id || `PWD-${member.userID}`,
-        userID: member.userID,
-        firstName: member.firstName,
-        lastName: member.lastName,
-        middleName: member.middleName,
-        birthDate: member.birthDate,
-        disabilityType: member.disabilityType,
-        barangay: member.barangay,
-        timestamp: new Date().toISOString()
-      };
+      // Use stored QR code data from backend if available
+      let qrData;
+      if (member.qr_code_data) {
+        try {
+          qrData = typeof member.qr_code_data === 'string' 
+            ? JSON.parse(member.qr_code_data) 
+            : member.qr_code_data;
+        } catch (parseError) {
+          console.warn('Failed to parse stored QR code data, generating new one:', parseError);
+          qrData = null;
+        }
+      }
+
+      // If no stored QR code data, generate new one with stable values
+      if (!qrData) {
+        // Use a stable timestamp - use qr_code_generated_at if available, otherwise use created_at, otherwise use a fixed date
+        const stableDate = member.qr_code_generated_at 
+          ? new Date(member.qr_code_generated_at).toISOString()
+          : (member.created_at ? new Date(member.created_at).toISOString() : new Date('2024-01-01').toISOString());
+        
+        qrData = {
+          type: 'PWD_BENEFIT_CLAIM',
+          version: '1.0',
+          pwd_id: member.pwd_id || `PWD-${member.userID}`,
+          userID: member.userID,
+          memberId: member.userID,
+          firstName: member.firstName,
+          lastName: member.lastName,
+          middleName: member.middleName,
+          birthDate: member.birthDate,
+          disabilityType: member.disabilityType,
+          barangay: member.barangay,
+          generatedAt: stableDate,
+          issuedDate: stableDate
+        };
+      }
 
       // Generate QR code with better mobile compatibility
       const qrCodeURL = await QRCode.toDataURL(JSON.stringify(qrData), {

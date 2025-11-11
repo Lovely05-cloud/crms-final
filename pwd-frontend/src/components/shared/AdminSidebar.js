@@ -242,6 +242,12 @@ function AdminSidebar({ isOpen, onToggle }) {
           active={isActive('/benefit-tracking')}
         />
         <SidebarItem 
+          icon={<DescriptionIcon />} 
+          label="Claim History" 
+          path="/claim-history"
+          active={isActive('/claim-history')}
+        />
+        <SidebarItem 
           icon={<AnnouncementIcon />} 
           label="Announcement" 
           path="/announcement"

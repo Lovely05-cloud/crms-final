@@ -1,4 +1,5 @@
 import api from './api';
+import toastService from './toastService';
 
 const analyticsService = {
   // Get automated suggestions based on system analysis
@@ -8,6 +9,7 @@ const analyticsService = {
       return response.data;
     } catch (error) {
       console.error('Error fetching automated suggestions:', error);
+      toastService.error('Failed to fetch automated suggestions: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -19,6 +21,7 @@ const analyticsService = {
       return response.data;
     } catch (error) {
       console.error(`Error fetching ${category} suggestions:`, error);
+      toastService.error(`Failed to fetch ${category} suggestions: ` + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -30,6 +33,7 @@ const analyticsService = {
       return response.data;
     } catch (error) {
       console.error('Error fetching suggestion summary:', error);
+      toastService.error('Failed to fetch suggestion summary: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -41,6 +45,7 @@ const analyticsService = {
       return response.data;
     } catch (error) {
       console.error('Error fetching high priority suggestions:', error);
+      toastService.error('Failed to fetch high priority suggestions: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -68,6 +73,7 @@ const analyticsService = {
       return response.data;
     } catch (error) {
       console.error('Error fetching transaction analysis:', error);
+      toastService.error('Failed to fetch transaction analysis: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },

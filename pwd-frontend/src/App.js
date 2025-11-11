@@ -28,6 +28,7 @@ import PWDCard from './components/cards/PWDCard';
 import Analytics from './components/analytics/Analytics';
 import Ayuda from './components/ayuda/Ayuda';
 import BenefitTracking from './components/benefit/BenefitTracking';
+import ClaimHistory from './components/benefit/ClaimHistory';
 import Announcement from './components/announcement/Announcement';
 import AdminSupportDesk from './components/support/AdminSupportDesk';
 
@@ -278,6 +279,14 @@ function AppContent() {
         } 
       />
       <Route 
+        path="/claim-history" 
+        element={
+          <ProtectedRoute allowedRoles={['Admin', 'SuperAdmin']}>
+            <ClaimHistory />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
         path="/announcement" 
         element={
           <ProtectedRoute allowedRoles={['Admin', 'SuperAdmin']}>
@@ -326,6 +335,14 @@ function AppContent() {
         element={
           <ProtectedRoute allowedRoles={['Staff2']}>
             <BenefitTracking />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/staff2-claim-history" 
+        element={
+          <ProtectedRoute allowedRoles={['Staff2']}>
+            <ClaimHistory />
           </ProtectedRoute>
         } 
       />

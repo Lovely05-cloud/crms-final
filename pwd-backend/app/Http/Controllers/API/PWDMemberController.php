@@ -121,7 +121,13 @@ class PWDMemberController extends Controller
     public function claimCard(Request $request, $id)
     {
         try {
+            // Try to find member by database id first
             $member = PWDMember::find($id);
+            
+            // If not found, try by userID (memberId might be userID)
+            if (!$member) {
+                $member = PWDMember::where('userID', $id)->first();
+            }
             
             if (!$member) {
                 return response()->json([
@@ -147,18 +153,27 @@ class PWDMemberController extends Controller
                 'cardExpirationDate' => $expirationDate
             ]);
 
-            // Create notification for the member
-            \App\Models\Notification::create([
-                'user_id' => $member->userID,
-                'type' => 'card_claimed',
-                'title' => 'PWD Card Claimed',
-                'message' => 'Your PWD ID card has been successfully claimed. Card expires on ' . $expirationDate->format('F d, Y') . '.',
-                'data' => [
+            // Create notification for the member (wrap in try-catch to prevent failure)
+            try {
+                \App\Models\Notification::create([
+                    'user_id' => $member->userID,
+                    'type' => 'card_claimed',
+                    'title' => 'PWD Card Claimed',
+                    'message' => 'Your PWD ID card has been successfully claimed. Card expires on ' . $expirationDate->format('F d, Y') . '.',
+                    'data' => [
+                        'member_id' => $member->id,
+                        'card_issue_date' => $issueDate->toDateString(),
+                        'card_expiration_date' => $expirationDate->toDateString()
+                    ],
+                    'is_read' => false
+                ]);
+            } catch (\Exception $notificationError) {
+                // Log notification error but don't fail the card claim
+                \Illuminate\Support\Facades\Log::warning('Failed to create notification for card claim', [
                     'member_id' => $member->id,
-                    'card_issue_date' => $issueDate->toDateString(),
-                    'card_expiration_date' => $expirationDate->toDateString()
-                ]
-            ]);
+                    'error' => $notificationError->getMessage()
+                ]);
+            }
 
             return response()->json([
                 'success' => true,

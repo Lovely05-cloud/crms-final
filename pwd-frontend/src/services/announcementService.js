@@ -1,4 +1,5 @@
 import { api } from './api';
+import toastService from './toastService';
 
 export const announcementService = {
   // Get all announcements
@@ -8,6 +9,7 @@ export const announcementService = {
       return response;
     } catch (error) {
       console.error('Error fetching announcements:', error);
+      toastService.error('Failed to fetch announcements: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -26,6 +28,7 @@ export const announcementService = {
       return adminAnnouncements;
     } catch (error) {
       console.error('Error fetching admin announcements:', error);
+      toastService.error('Failed to fetch admin announcements: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -37,6 +40,7 @@ export const announcementService = {
       return response;
     } catch (error) {
       console.error('Error creating announcement:', error);
+      toastService.error('Failed to create announcement: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -48,6 +52,7 @@ export const announcementService = {
       return response;
     } catch (error) {
       console.error('Error updating announcement:', error);
+      toastService.error('Failed to update announcement: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -59,6 +64,7 @@ export const announcementService = {
       return response;
     } catch (error) {
       console.error('Error deleting announcement:', error);
+      toastService.error('Failed to delete announcement: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -70,6 +76,7 @@ export const announcementService = {
       return response;
     } catch (error) {
       console.error('Error fetching announcement:', error);
+      toastService.error('Failed to fetch announcement: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -88,6 +95,7 @@ export const announcementService = {
       return filteredAnnouncements;
     } catch (error) {
       console.error('Error fetching announcements by audience:', error);
+      toastService.error('Failed to fetch announcements by audience: ' + (error.message || 'Unknown error'));
       throw error;
     }
   },
@@ -120,6 +128,7 @@ export const announcementService = {
       return filteredAnnouncements;
     } catch (error) {
       console.error('Error fetching filtered announcements for PWD member:', error);
+      toastService.error('Failed to fetch announcements: ' + (error.message || 'Unknown error'));
       throw error;
     }
   }
