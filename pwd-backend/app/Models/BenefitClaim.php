@@ -20,7 +20,8 @@ class BenefitClaim extends Model
         'claimantType',
         'claimantName',
         'claimantRelation',
-        'authorizationLetter'
+        'authorizationLetter',
+        'signedTreasuryLetter'
     ];
 
     protected $casts = [

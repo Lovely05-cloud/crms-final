@@ -49,6 +49,7 @@ import PWDMemberAnnouncement from './components/announcement/PWDMemberAnnounceme
 import PWDMemberSupportDesk from './components/support/PWDMemberSupportDesk';
 import PWDProfile from './components/profile/PWDProfile';
 import MemberDocumentUpload from './components/documents/MemberDocumentUpload';
+import PWDMemberBenefits from './components/benefit/PWDMemberBenefits';
 
 // Application components
 import ApplicationForm from './components/application/ApplicationForm';
@@ -461,6 +462,14 @@ function AppContent() {
         element={
           <ProtectedRoute allowedRoles={['PWDMember']}>
             <MemberDocumentUpload />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/pwd-benefits" 
+        element={
+          <ProtectedRoute allowedRoles={['PWDMember']}>
+            <PWDMemberBenefits />
           </ProtectedRoute>
         } 
       />

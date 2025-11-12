@@ -884,6 +884,8 @@ Route::get('/announcements/{id}', [AnnouncementController::class, 'show']);
 Route::get('/benefit-claims', [BenefitClaimController::class, 'index']);
 Route::post('/benefit-claims', [BenefitClaimController::class, 'store']);
 Route::patch('/benefit-claims/{id}/status', [BenefitClaimController::class, 'updateStatus']);
+Route::get('/benefit-claims/{id}/treasury-letter', [BenefitClaimController::class, 'downloadTreasuryLetter']);
+Route::post('/benefit-claims/{id}/upload-signed-letter', [BenefitClaimController::class, 'uploadSignedLetter']);
 
 // QR scan claim benefits route
 Route::post('/qr-scan/claim-benefits', [BenefitClaimController::class, 'claimBenefits']);
@@ -2157,6 +2159,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Benefit Claim routes
     Route::apiResource('benefit-claims', BenefitClaimController::class);
     Route::patch('benefit-claims/{id}/status', [BenefitClaimController::class, 'updateStatus']);
+    Route::get('benefit-claims/{id}/treasury-letter', [BenefitClaimController::class, 'downloadTreasuryLetter']);
+    Route::post('benefit-claims/{id}/upload-signed-letter', [BenefitClaimController::class, 'uploadSignedLetter']);
     
     // Announcement routes (protected - for admin operations)
     Route::post('/announcements', [AnnouncementController::class, 'store']);

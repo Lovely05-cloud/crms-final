@@ -316,4 +316,82 @@ class BenefitClaimController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Download treasury letter for late claim
+     */
+    public function downloadTreasuryLetter($id)
+    {
+        try {
+            $claim = BenefitClaim::with('pwdMember', 'benefit')->find($id);
+            
+            if (!$claim) {
+                return response()->json(['message' => 'Benefit claim not found'], 404);
+            }
+
+            // Check if DomPDF is available
+            if (class_exists('\Barryvdh\DomPDF\Facade\Pdf')) {
+                $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('benefits.treasury_letter', [
+                    'claim' => $claim,
+                    'member' => $claim->pwdMember,
+                    'benefit' => $claim->benefit,
+                    'date' => now()->format('F d, Y')
+                ]);
+                return $pdf->download('Treasury_Letter_' . ($claim->benefit->title ?? $claim->benefit->type) . '_' . $id . '.pdf');
+            } else {
+                // Fallback: Return HTML view that can be printed
+                return view('benefits.treasury_letter', [
+                    'claim' => $claim,
+                    'member' => $claim->pwdMember,
+                    'benefit' => $claim->benefit,
+                    'date' => now()->format('F d, Y')
+                ]);
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error generating treasury letter: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to generate treasury letter: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Upload signed treasury letter for late claim
+     */
+    public function uploadSignedLetter(Request $request, $id)
+    {
+        try {
+            $claim = BenefitClaim::find($id);
+            
+            if (!$claim) {
+                return response()->json(['message' => 'Benefit claim not found'], 404);
+            }
+
+            $validator = Validator::make($request->all(), [
+                'signed_letter' => 'required|file|image|mimes:jpeg,jpg,png|max:10240',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json($validator->errors(), 400);
+            }
+
+            // Store the signed letter
+            $file = $request->file('signed_letter');
+            $fileName = 'signed_treasury_letter_' . time() . '_' . $claim->id . '.' . $file->getClientOriginalExtension();
+            $filePath = $file->storeAs('signed_treasury_letters', $fileName, 'public');
+
+            // Update claim with signed letter path
+            $claim->update([
+                'signedTreasuryLetter' => $filePath,
+                'status' => 'Pending Approval' // Change status to pending approval
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Signed letter uploaded successfully. Your claim is pending approval.',
+                'claim' => $claim->load('pwdMember', 'benefit')
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error uploading signed letter: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to upload signed letter'], 500);
+        }
+    }
 }

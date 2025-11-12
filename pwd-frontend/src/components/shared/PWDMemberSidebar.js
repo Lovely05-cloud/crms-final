@@ -18,6 +18,7 @@ import DashboardIcon from '@mui/icons-material/Dashboard';
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import PersonIcon from '@mui/icons-material/Person';
 import DescriptionIcon from '@mui/icons-material/Description';
+import CardGiftcardIcon from '@mui/icons-material/CardGiftcard';
 import LogoutIcon from '@mui/icons-material/Logout';
 import Menu from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
@@ -40,6 +41,7 @@ function PWDMemberSidebar({ isOpen, onToggle }) {
   
   const menuItems = [
     { text: t('common.dashboard'), icon: <DashboardIcon />, path: '/dashboard', badgeCount: 0 },
+    { text: 'Benefits', icon: <CardGiftcardIcon />, path: '/pwd-benefits', badgeCount: 0 },
     { text: t('common.documents'), icon: <DescriptionIcon />, path: '/pwd-documents', badgeCount: 0 },
     { text: t('support.title'), icon: <SupportAgentIcon />, path: '/pwd-support', badgeCount: unreadNotifications },
     { text: t('common.profile'), icon: <PersonIcon />, path: '/pwd-profile', badgeCount: 0 },
