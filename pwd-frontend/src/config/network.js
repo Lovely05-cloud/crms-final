@@ -19,6 +19,13 @@ const PRODUCTION_CONFIG = {
   STORAGE_BASE_URL: 'https://lightgoldenrodyellow-ibis-644404.hostingersite.com',
 };
 
+// Cloudflare Tunnel Configuration
+const CLOUDFLARE_TUNNEL_CONFIG = {
+  // Backend API through Cloudflare tunnel
+  API_BASE_URL: 'https://examines-electric-kim-took.trycloudflare.com/api',
+  STORAGE_BASE_URL: 'https://examines-electric-kim-took.trycloudflare.com',
+};
+
 // Auto-detect environment
 const isProduction = process.env.NODE_ENV === 'production' || 
                     window.location.hostname !== 'localhost' && 

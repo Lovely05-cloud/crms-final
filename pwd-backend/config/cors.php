@@ -24,8 +24,7 @@ return [
         'http://localhost:5173',
         'http://127.0.0.1:3000',
         'http://127.0.0.1:5173',
-        'https://volume-formatting-finest-municipal.trycloudflare.com',
-        'https://advancement-nuclear-recommends-oliver.trycloudflare.com',
+        'https://communication-bathrooms-jean-employ.trycloudflare.com',
     ],
 
     'allowed_origins_patterns' => [
