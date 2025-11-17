@@ -63,6 +63,11 @@ class PWDMember extends Model
         return $this->hasMany(MemberDocument::class, 'member_id', 'userID');
     }
 
+    public function idRenewals()
+    {
+        return $this->hasMany(IDRenewal::class, 'member_id', 'userID');
+    }
+
     protected $casts = [
         'birthDate' => 'date',
         'cardIssueDate' => 'date',

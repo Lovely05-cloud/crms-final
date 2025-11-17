@@ -20,6 +20,7 @@ use App\Http\Controllers\LanguageController;
 use App\Http\Controllers\DashboardController as MainDashboardController;
 use App\Http\Controllers\API\AnalyticsController;
 use App\Http\Controllers\API\DocumentManagementController;
+use App\Http\Controllers\API\IDRenewalController;
 
 // Language routes
 Route::prefix('language')->group(function () {
@@ -2247,6 +2248,20 @@ Route::middleware('auth:sanctum')->group(function () {
         // Notification routes
         Route::get('/notifications', [DocumentManagementController::class, 'getNotifications']);
         Route::post('/notifications/{id}/read', [DocumentManagementController::class, 'markNotificationAsRead']);
+    });
+
+    // ID Renewal routes
+    Route::prefix('id-renewals')->group(function () {
+        // Member routes
+        Route::post('/submit', [IDRenewalController::class, 'submitRenewal']);
+        Route::get('/my-status', [IDRenewalController::class, 'getMyRenewalStatus']);
+        
+        // Admin routes
+        Route::get('/', [IDRenewalController::class, 'getAllRenewals']);
+        Route::get('/{id}', [IDRenewalController::class, 'getRenewal']);
+        Route::post('/{id}/approve', [IDRenewalController::class, 'approveRenewal']);
+        Route::post('/{id}/reject', [IDRenewalController::class, 'rejectRenewal']);
+        Route::get('/{id}/file/{type}', [IDRenewalController::class, 'getFile']);
     });
 
     // Document Migration routes (Admin only)

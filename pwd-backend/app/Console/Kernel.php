@@ -15,7 +15,10 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule)
     {
-        // $schedule->command('inspire')->hourly();
+        // Check for cards expiring within 30 days and send notifications
+        $schedule->command('pwd:check-card-renewals')
+            ->daily()
+            ->at('09:00'); // Run at 9:00 AM daily
     }
 
     /**

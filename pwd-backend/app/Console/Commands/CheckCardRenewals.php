@@ -33,12 +33,12 @@ class CheckCardRenewals extends Command
         $this->info('Checking for cards that need renewal...');
 
         $today = Carbon::today();
-        $oneMonthFromNow = Carbon::today()->addMonth();
+        $thirtyDaysFromNow = Carbon::today()->addDays(30);
 
-        // Find cards that are expiring within the next month
+        // Find cards that are expiring within the next 30 days
         $membersNeedingRenewal = PWDMember::where('cardClaimed', true)
             ->whereNotNull('cardExpirationDate')
-            ->whereBetween('cardExpirationDate', [$today, $oneMonthFromNow])
+            ->whereBetween('cardExpirationDate', [$today, $thirtyDaysFromNow])
             ->get();
 
         $notificationsCreated = 0;
@@ -59,7 +59,7 @@ class CheckCardRenewals extends Command
                     'user_id' => $member->userID,
                     'type' => 'card_renewal_due',
                     'title' => 'PWD Card Renewal Due',
-                    'message' => "Your PWD ID card will expire on " . Carbon::parse($member->cardExpirationDate)->format('F d, Y') . " ({$daysUntilExpiration} days remaining). Please renew your card before it expires.",
+                    'message' => "Your PWD ID card will expire on " . Carbon::parse($member->cardExpirationDate)->format('F d, Y') . " ({$daysUntilExpiration} days remaining). Please submit your renewal request with your old ID card and a recent medical certificate.",
                     'data' => [
                         'member_id' => $member->id,
                         'expiration_date' => $member->cardExpirationDate,

@@ -57,6 +57,200 @@ import SuccessModal from '../shared/SuccessModal';
 import { useModal } from '../../hooks/useModal';
 import { jsPDF } from 'jspdf';
 
+const PLACEHOLDER_LINE = '________________';
+const HTML_ESCAPE_LOOKUP = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;'
+};
+
+const escapeHtml = (value = '') => value.toString().replace(/[&<>"']/g, (char) => HTML_ESCAPE_LOOKUP[char] || char);
+
+const getMemberFullName = (member = {}) => {
+  if (!member) return '';
+  const parts = [
+    member.firstName,
+    member.middleName && member.middleName.trim().toUpperCase() !== 'N/A' ? member.middleName : '',
+    member.lastName,
+    member.suffix
+  ].filter(Boolean);
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+};
+
+const getMemberAddressLine = (member = {}) => {
+  if (!member) return '';
+  const addressParts = [];
+  if (member.address) addressParts.push(member.address);
+  if (member.barangay && member.barangay !== 'N/A') addressParts.push(member.barangay);
+  const city = member.cityMunicipality || member.city || 'Cabuyao';
+  const province = member.province || 'Laguna';
+  addressParts.push(city);
+  addressParts.push(province);
+  return addressParts.join(', ').replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '');
+};
+
+const getMemberIdNumber = (member = {}) => {
+  if (!member) return '';
+  if (member.pwd_id) return member.pwd_id;
+  if (member.id) return member.id;
+  if (member.userID || member.userId) {
+    const idValue = member.userID || member.userId;
+    return `PWD-${String(idValue).padStart(6, '0')}`;
+  }
+  return '';
+};
+
+const formatCardDate = (value) => {
+  if (!value) return '';
+  try {
+    return new Date(value).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
+  } catch (error) {
+    return '';
+  }
+};
+
+const withPlaceholder = (value, { uppercase = false } = {}) => {
+  if (!value || (typeof value === 'string' && value.trim() === '')) {
+    return PLACEHOLDER_LINE;
+  }
+  const text = value.toString();
+  return uppercase ? text.toUpperCase() : text;
+};
+
+const FlagIcon = ({ width = 60, height = 36 }) => (
+  <Box
+    sx={{
+      width,
+      height,
+      border: '1px solid #111827',
+      borderRadius: '4px',
+      position: 'relative',
+      overflow: 'hidden',
+      backgroundColor: '#FFFFFF',
+      flexShrink: 0
+    }}
+  >
+    <Box
+      sx={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '35%',
+        height: '100%',
+        backgroundColor: '#FFFFFF',
+        clipPath: 'polygon(0 0, 0 100%, 100% 50%)',
+        zIndex: 2
+      }}
+    />
+    <Box
+      sx={{
+        position: 'absolute',
+        top: 0,
+        left: '35%',
+        width: '65%',
+        height: '50%',
+        backgroundColor: '#0038A8'
+      }}
+    />
+    <Box
+      sx={{
+        position: 'absolute',
+        bottom: 0,
+        left: '35%',
+        width: '65%',
+        height: '50%',
+        backgroundColor: '#CE1126'
+      }}
+    />
+    <Box
+      sx={{
+        position: 'absolute',
+        left: '12%',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        width: height * 0.35,
+        height: height * 0.35,
+        borderRadius: '50%',
+        backgroundColor: '#FCD116',
+        zIndex: 3
+      }}
+    />
+  </Box>
+);
+
+const CitySeal = ({ size = 28 }) => (
+  <Box
+    sx={{
+      width: size,
+      height: size,
+      borderRadius: '50%',
+      border: '1.5px solid #1f2937',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: '#FFFFFF',
+      flexShrink: 0,
+      px: 0.5
+    }}
+  >
+    <Typography
+      component="span"
+      sx={{
+        fontSize: size * 0.26,
+        fontWeight: 700,
+        lineHeight: 1.05,
+        textAlign: 'center',
+        color: '#1f2937'
+      }}
+    >
+      LUNGSOD<br />NG<br />CABUYAO<br />2012
+    </Typography>
+  </Box>
+);
+
+const PdaoLogo = ({ size = 28 }) => (
+  <Box
+    sx={{
+      width: size,
+      height: size,
+      borderRadius: '50%',
+      border: '1.5px solid #0b87ac',
+      backgroundColor: '#0b87ac',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      flexShrink: 0
+    }}
+  >
+    <Typography
+      component="span"
+      sx={{ fontSize: size * 0.5, fontWeight: 700, color: '#FFFFFF', lineHeight: 1 }}
+    >
+      ♿
+    </Typography>
+  </Box>
+);
+
+const BagongWordmark = ({ fontSize = '0.7rem', align = 'center' }) => (
+  <Typography
+    sx={{
+      fontWeight: 800,
+      letterSpacing: '0.2em',
+      color: '#B71C1C',
+      fontSize,
+      textAlign: align
+    }}
+  >
+    BAGONG CABUYAO
+  </Typography>
+);
+
 function PWDCard() {
   const { currentUser } = useAuth();
   const [pwdMembers, setPwdMembers] = useState([]);
@@ -67,6 +261,7 @@ function PWDCard() {
   const [qrCodeDataURL, setQrCodeDataURL] = useState('');
   const [idPictureUrl, setIdPictureUrl] = useState(null);
   const [isCardFlipped, setIsCardFlipped] = useState(false);
+  const [photoLoadError, setPhotoLoadError] = useState(false);
   
   // Success modal
   const { modalOpen, modalConfig, showModal, hideModal } = useModal();
@@ -406,9 +601,6 @@ function PWDCard() {
       
       const memberName = selectedMemberData.name || `${selectedMemberData.firstName || ''} ${selectedMemberData.middleName || ''} ${selectedMemberData.lastName || ''}`.trim() || 'Unknown';
       const memberId = selectedMemberData.pwd_id || selectedMemberData.id || `PWD-${selectedMemberData.userID || 'N/A'}`;
-      const disabilityType = selectedMemberData.disabilityType || selectedMemberData.typeOfDisability || 'NOT SPECIFIED';
-      const province = selectedMemberData.province || 'LAGUNA';
-      const cityMunicipality = selectedMemberData.cityMunicipality || selectedMemberData.city || 'CABUYAO';
 
       // Create PDF in landscape orientation to fit both front and back side by side (6.5in x 2in)
       const pdf = new jsPDF({
@@ -440,141 +632,90 @@ function PWDCard() {
       pdf.setLineWidth(0.01);
       pdf.rect(frontCardX, frontCardY, cardWidth, cardHeight);
 
-      // Top section with flag, header, logos (landscape layout) - FRONT CARD
-      const topSectionY = frontCardY + margin + 0.05;
-      const topSectionHeight = 0.3;
+      const centerX = frontCardX + cardWidth / 2;
+      const headerTop = frontCardY + margin + 0.2;
 
-      // Draw Philippine flag (left side)
-      const flagX = frontCardX + margin + 0.06;
-      const flagY = topSectionY;
-      const flagWidth = 0.2;
-      const flagHeight = 0.15;
-
-      // Flag border
-      pdf.setDrawColor(0, 0, 0);
-      pdf.setLineWidth(0.005);
-      pdf.rect(flagX, flagY, flagWidth, flagHeight);
-
-      // White background (left triangle area)
-      pdf.setFillColor(255, 255, 255);
-      pdf.rect(flagX, flagY, flagWidth * 0.33, flagHeight, 'F');
-
-      // Blue stripe (top right)
-      pdf.setFillColor(0, 56, 168);
-      pdf.rect(flagX + flagWidth * 0.33, flagY, flagWidth * 0.67, flagHeight / 2, 'F');
-
-      // Red stripe (bottom right)
-      pdf.setFillColor(206, 17, 38);
-      pdf.rect(flagX + flagWidth * 0.33, flagY + flagHeight / 2, flagWidth * 0.67, flagHeight / 2, 'F');
-
-      // Golden sun (simplified as circle)
-      pdf.setFillColor(252, 209, 22);
-      pdf.circle(flagX + flagWidth * 0.2, flagY + flagHeight / 2, 0.025, 'F');
-
-      // Header text (next to flag)
-      pdf.setFontSize(5);
-      pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(0, 0, 0);
-      pdf.text('REPUBLIC OF THE PHILIPPINES', flagX + flagWidth + 0.04, flagY + 0.03);
-      
-      pdf.setFontSize(4.5);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(`PROVINCE OF ${province}`, flagX + flagWidth + 0.04, flagY + 0.06);
-      
       pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(6);
+      pdf.text('REPUBLIC OF THE PHILIPPINES', centerX, headerTop, { align: 'center' });
+      pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(5);
-      pdf.text(`CITY OF ${cityMunicipality}`, flagX + flagWidth + 0.04, flagY + 0.09);
+      pdf.text(`PROVINCE OF ${provinceValue}`, centerX, headerTop + 0.07, { align: 'center' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(6.5);
+      pdf.text(`CITY OF ${cityValue}`, centerX, headerTop + 0.14, { align: 'center' });
 
-      // Right side logos
-      const logoX = frontCardX + cardWidth - margin - 0.28;
-      const logoY = topSectionY;
-
-      // PDAO Logo (wheelchair symbol)
-      pdf.setFillColor(0, 56, 168);
-      pdf.circle(logoX, logoY + 0.075, 0.08, 'F');
-      pdf.setFillColor(255, 255, 255);
-      pdf.setFontSize(8);
-      pdf.text('♿', logoX, logoY + 0.08, { align: 'center' });
-
-      // City Seal (front side)
-      const frontSealX = logoX + 0.12;
+      // Logo group on the right
+      const logoCenterY = frontCardY + margin + 0.12;
+      const citySealX = frontCardX + cardWidth - margin - 0.18;
       pdf.setDrawColor(0, 0, 0);
       pdf.setLineWidth(0.005);
-      pdf.circle(frontSealX, logoY + 0.075, 0.08);
-      pdf.circle(frontSealX, logoY + 0.075, 0.07);
-      
+      pdf.circle(citySealX, logoCenterY, 0.08);
+      pdf.circle(citySealX, logoCenterY, 0.07);
       pdf.setFontSize(3);
       pdf.setFont('helvetica', 'bold');
-      pdf.text('LUNGSOD', frontSealX, logoY + 0.04, { align: 'center' });
-      pdf.text('NG', frontSealX, logoY + 0.055, { align: 'center' });
-      pdf.text('CABUYAO', frontSealX, logoY + 0.07, { align: 'center' });
-      pdf.text('2012', frontSealX, logoY + 0.09, { align: 'center' });
+      pdf.text('LUNGSOD', citySealX, logoCenterY - 0.03, { align: 'center' });
+      pdf.text('NG', citySealX, logoCenterY - 0.015, { align: 'center' });
+      pdf.text('CABUYAO', citySealX, logoCenterY, { align: 'center' });
+      pdf.text('2012', citySealX, logoCenterY + 0.015, { align: 'center' });
 
-      // BAGONG CABUYAO text
-      pdf.setFontSize(7);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(255, 107, 53); // Orange-red color
-      pdf.text('BAGONG CABUYAO', frontCardX + cardWidth / 2, topSectionY + topSectionHeight + 0.08, { align: 'center' });
-
-      // Main content section (landscape - horizontal layout)
-      const mainContentY = topSectionY + topSectionHeight + 0.12;
-      const mainContentHeight = cardHeight - (mainContentY - frontCardY) - margin - 0.15;
-
-      // Left column - Member information
-      const leftColumnX = frontCardX + margin + 0.08;
-      const leftColumnWidth = contentWidth * 0.6;
-
-      // NAME field
-      pdf.setFontSize(4.5);
-      pdf.setFont('helvetica', 'bold');
+      const pdaoX = citySealX + 0.18;
+      pdf.setFillColor(0, 56, 168);
+      pdf.circle(pdaoX, logoCenterY, 0.08, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(8);
+      pdf.text('♿', pdaoX, logoCenterY + 0.01, { align: 'center' });
       pdf.setTextColor(0, 0, 0);
-      pdf.text('NAME', leftColumnX, mainContentY + 0.08);
+
+      const contentStartY = headerTop + 0.28;
+      const leftColumnX = frontCardX + margin + 0.06;
+      const leftColumnWidth = contentWidth * 0.55;
+      const rightColumnWidth = contentWidth * 0.35;
+      const rightColumnX = frontCardX + cardWidth - margin - rightColumnWidth;
+
+      pdf.setFontSize(4.5);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('NAME', leftColumnX, contentStartY + 0.05);
       pdf.setLineWidth(0.003);
-      pdf.line(leftColumnX, mainContentY + 0.1, leftColumnX + leftColumnWidth * 0.85, mainContentY + 0.1);
-      
+      pdf.line(leftColumnX, contentStartY + 0.07, leftColumnX + leftColumnWidth * 0.85, contentStartY + 0.07);
       pdf.setFontSize(6);
-      pdf.setFont('helvetica', 'bold');
-      const nameLines = pdf.splitTextToSize(memberName.toUpperCase(), leftColumnWidth * 0.85);
-      pdf.text(nameLines, leftColumnX, mainContentY + 0.15);
+      const nameLines = pdf.splitTextToSize(displayName, leftColumnWidth * 0.85);
+      pdf.text(nameLines, leftColumnX, contentStartY + 0.12);
 
-      // DISABILITY field
       pdf.setFontSize(4.5);
       pdf.setFont('helvetica', 'bold');
-      pdf.text('DISABILITY', leftColumnX, mainContentY + 0.28);
-      pdf.line(leftColumnX, mainContentY + 0.3, leftColumnX + leftColumnWidth * 0.85, mainContentY + 0.3);
-      
+      pdf.text('DISABILITY', leftColumnX, contentStartY + 0.25);
+      pdf.line(leftColumnX, contentStartY + 0.27, leftColumnX + leftColumnWidth * 0.85, contentStartY + 0.27);
       pdf.setFontSize(5.5);
-      pdf.setFont('helvetica', 'bold');
-      const disabilityLines = pdf.splitTextToSize(disabilityType.toUpperCase(), leftColumnWidth * 0.85);
-      pdf.text(disabilityLines, leftColumnX, mainContentY + 0.35);
+      const disabilityLines = pdf.splitTextToSize(displayDisability, leftColumnWidth * 0.85);
+      pdf.text(disabilityLines, leftColumnX, contentStartY + 0.32);
 
-      // ID NO field
+      const idTextY = contentStartY + 0.05;
+      const rightCenterX = rightColumnX + rightColumnWidth / 2;
       pdf.setFontSize(4.5);
       pdf.setFont('helvetica', 'bold');
-      pdf.text('ID NO.', leftColumnX, mainContentY + 0.48);
-      pdf.line(leftColumnX, mainContentY + 0.5, leftColumnX + leftColumnWidth * 0.85, mainContentY + 0.5);
-      
+      pdf.text('ID NO.', rightCenterX, idTextY, { align: 'center' });
       pdf.setFontSize(5.5);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(memberId, leftColumnX, mainContentY + 0.55);
+      pdf.text(displayIdNumber, rightCenterX, idTextY + 0.08, { align: 'center' });
 
-      // Right column - Photo
-      const rightColumnX = leftColumnX + leftColumnWidth + 0.05;
-      const photoWidth = 0.7;
-      const photoHeight = 0.9;
-      const photoX = rightColumnX;
-      const photoY = mainContentY;
+      const photoWidth = rightColumnWidth * 0.75;
+      const photoHeight = 0.95;
+      const photoX = rightColumnX + (rightColumnWidth - photoWidth) / 2;
+      const photoY = idTextY + 0.12;
 
       pdf.setDrawColor(0, 0, 0);
       pdf.setLineWidth(0.01);
       pdf.rect(photoX, photoY, photoWidth, photoHeight);
+      pdf.setFillColor(243, 244, 246);
+      pdf.rect(photoX, photoY, photoWidth, photoHeight, 'F');
 
-      // Try to load and add ID picture if available
-      if (idPictureUrl) {
+      const photoSource = resolvedPhotoUrl;
+      if (photoSource) {
         try {
           const img = new Image();
           img.crossOrigin = 'anonymous';
-          img.src = idPictureUrl;
+          img.src = photoSource;
           
           await new Promise((resolve) => {
             img.onload = () => {
@@ -615,12 +756,34 @@ function PWDCard() {
         pdf.text('2x2', photoX + photoWidth / 2, photoY + photoHeight / 2, { align: 'center' });
       }
 
-      // Footer
-      const footerY = frontCardY + cardHeight - margin - 0.08;
-      pdf.setFontSize(4);
+      // Bottom flag and Bagong text
+      const flagWidthPdf = 0.45;
+      const flagHeightPdf = 0.25;
+      const flagPosX = frontCardX + margin + 0.05;
+      const flagPosY = frontCardY + cardHeight - margin - flagHeightPdf - 0.18;
+
+      pdf.setDrawColor(0, 0, 0);
+      pdf.setLineWidth(0.005);
+      pdf.rect(flagPosX, flagPosY, flagWidthPdf, flagHeightPdf);
+      pdf.setFillColor(255, 255, 255);
+      pdf.rect(flagPosX, flagPosY, flagWidthPdf * 0.33, flagHeightPdf, 'F');
+      pdf.setFillColor(0, 56, 168);
+      pdf.rect(flagPosX + flagWidthPdf * 0.33, flagPosY, flagWidthPdf * 0.67, flagHeightPdf / 2, 'F');
+      pdf.setFillColor(206, 17, 38);
+      pdf.rect(flagPosX + flagWidthPdf * 0.33, flagPosY + flagHeightPdf / 2, flagWidthPdf * 0.67, flagHeightPdf / 2, 'F');
+      pdf.setFillColor(252, 209, 22);
+      pdf.circle(flagPosX + flagWidthPdf * 0.2, flagPosY + flagHeightPdf / 2, 0.03, 'F');
+
+      pdf.setFontSize(5.5);
       pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(183, 28, 28);
+      pdf.text('BAGONG CABUYAO', frontCardX + cardWidth - margin - 0.05, flagPosY + flagHeightPdf / 2 + 0.03, { align: 'right' });
       pdf.setTextColor(0, 0, 0);
-      pdf.text('VALID ANYWHERE IN PHILIPPINES', frontCardX + cardWidth / 2, footerY, { align: 'center' });
+
+      const footerY = frontCardY + cardHeight - margin - 0.05;
+      pdf.setFontSize(4.5);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('VALID ANYWHERE IN PHILIPPINES', centerX, footerY, { align: 'center' });
 
       // BACK SIDE - Right side of the page
       const backMargin = 0.05;
@@ -702,15 +865,6 @@ function PWDCard() {
       const fieldLabelSize = 4.5;
       const fieldValueSize = 4;
 
-      // QR Code Description
-      pdf.setFontSize(3);
-      pdf.setFont('helvetica', 'italic');
-      pdf.setTextColor(127, 140, 141); // Gray color
-      const qrDescription = 'Scan the QR code to verify card authenticity and access member information digitally.';
-      const descLines = pdf.splitTextToSize(qrDescription, backRightColumnWidth * 0.95);
-      pdf.text(descLines, backRightColumnX, detailY);
-      detailY += (descLines.length * 0.04) + 0.08;
-
       // ADDRESS
       pdf.setFontSize(fieldLabelSize);
       pdf.setFont('helvetica', 'bold');
@@ -718,17 +872,11 @@ function PWDCard() {
       pdf.text('ADDRESS:', backRightColumnX, detailY);
       pdf.setLineWidth(0.003);
       pdf.line(backRightColumnX, detailY + 0.022, backRightColumnX + backRightColumnWidth * 0.95, detailY + 0.022);
-      const address = selectedMemberData?.address ? 
-        `${selectedMemberData.address}, ${selectedMemberData.barangay || ''}, ${selectedMemberData.city || 'Cabuyao'}, ${selectedMemberData.province || 'Laguna'}`.replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '') : '';
       pdf.setFontSize(fieldValueSize);
       pdf.setFont('helvetica', 'normal');
-      if (address) {
-        const addressLines = pdf.splitTextToSize(address, backRightColumnWidth * 0.95);
-        pdf.text(addressLines, backRightColumnX, detailY + 0.055);
-        detailY += (addressLines.length * 0.055) + lineHeight;
-      } else {
-        detailY += lineHeight;
-      }
+      const addressLines = pdf.splitTextToSize(displayAddress, backRightColumnWidth * 0.95);
+      pdf.text(addressLines, backRightColumnX, detailY + 0.055);
+      detailY += (addressLines.length * 0.055) + lineHeight;
 
       // DATE OF BIRTH and DATE ISSUED (side by side)
       pdf.setFontSize(fieldLabelSize);
@@ -737,9 +885,7 @@ function PWDCard() {
       pdf.line(backRightColumnX, detailY + 0.022, backRightColumnX + backRightColumnWidth * 0.45, detailY + 0.022);
       pdf.setFontSize(fieldValueSize);
       pdf.setFont('helvetica', 'normal');
-      const dob = selectedMemberData?.dateOfBirth ? 
-        new Date(selectedMemberData.dateOfBirth).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
-      pdf.text(dob, backRightColumnX, detailY + 0.055);
+      pdf.text(displayDob, backRightColumnX, detailY + 0.055);
       
       pdf.setFontSize(fieldLabelSize);
       pdf.setFont('helvetica', 'bold');
@@ -747,9 +893,7 @@ function PWDCard() {
       pdf.line(backRightColumnX + backRightColumnWidth * 0.52, detailY + 0.022, backRightColumnX + backRightColumnWidth * 0.95, detailY + 0.022);
       pdf.setFontSize(fieldValueSize);
       pdf.setFont('helvetica', 'normal');
-      const dateIssued = selectedMemberData?.cardIssueDate ? 
-        new Date(selectedMemberData.cardIssueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
-      pdf.text(dateIssued, backRightColumnX + backRightColumnWidth * 0.52, detailY + 0.055);
+      pdf.text(displayDateIssued, backRightColumnX + backRightColumnWidth * 0.52, detailY + 0.055);
       detailY += lineHeight;
 
       // SEX and BLOOD TYPE (side by side)
@@ -759,7 +903,7 @@ function PWDCard() {
       pdf.line(backRightColumnX, detailY + 0.022, backRightColumnX + backRightColumnWidth * 0.45, detailY + 0.022);
       pdf.setFontSize(fieldValueSize);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(selectedMemberData?.gender || '', backRightColumnX, detailY + 0.055);
+      pdf.text(displayGender, backRightColumnX, detailY + 0.055);
       
       pdf.setFontSize(fieldLabelSize);
       pdf.setFont('helvetica', 'bold');
@@ -767,7 +911,7 @@ function PWDCard() {
       pdf.line(backRightColumnX + backRightColumnWidth * 0.52, detailY + 0.022, backRightColumnX + backRightColumnWidth * 0.95, detailY + 0.022);
       pdf.setFontSize(fieldValueSize);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(selectedMemberData?.bloodType || '', backRightColumnX + backRightColumnWidth * 0.52, detailY + 0.055);
+      pdf.text(displayBloodType, backRightColumnX + backRightColumnWidth * 0.52, detailY + 0.055);
       detailY += lineHeight;
 
       // CONTACT NO
@@ -777,7 +921,7 @@ function PWDCard() {
       pdf.line(backRightColumnX, detailY + 0.022, backRightColumnX + backRightColumnWidth * 0.95, detailY + 0.022);
       pdf.setFontSize(fieldValueSize);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(selectedMemberData?.contactNumber || '', backRightColumnX, detailY + 0.055);
+      pdf.text(displayContact, backRightColumnX, detailY + 0.055);
       detailY += lineHeight;
 
       // GUARDIAN NAME
@@ -787,7 +931,7 @@ function PWDCard() {
       pdf.line(backRightColumnX, detailY + 0.022, backRightColumnX + backRightColumnWidth * 0.95, detailY + 0.022);
       pdf.setFontSize(fieldValueSize);
       pdf.setFont('helvetica', 'normal');
-      pdf.text(selectedMemberData?.guardianName || '', backRightColumnX, detailY + 0.055);
+      pdf.text(displayGuardian, backRightColumnX, detailY + 0.055);
 
       // Save PDF
       const fileName = `PWD_ID_Card_${memberName.replace(/\s+/g, '_')}_${memberId}.pdf`;
@@ -964,387 +1108,372 @@ function PWDCard() {
     const printWindow = window.open('', '_blank');
     const memberName = selectedMemberData.name || `${selectedMemberData.firstName || ''} ${selectedMemberData.middleName || ''} ${selectedMemberData.lastName || ''}`.trim() || 'Unknown';
     const memberId = selectedMemberData.pwd_id || selectedMemberData.id || `PWD-${selectedMemberData.userID || 'N/A'}`;
-    const disabilityType = selectedMemberData.disabilityType || selectedMemberData.typeOfDisability || 'NOT SPECIFIED';
-    const province = selectedMemberData.province || 'LAGUNA';
-    const cityMunicipality = selectedMemberData.cityMunicipality || selectedMemberData.city || 'CABUYAO';
-    const address = selectedMemberData?.address ? 
-      `${selectedMemberData.address}, ${selectedMemberData.barangay || ''}, ${selectedMemberData.city || 'Cabuyao'}, ${selectedMemberData.province || 'Laguna'}`.replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '') : '';
-    const dob = selectedMemberData?.dateOfBirth ? 
-      new Date(selectedMemberData.dateOfBirth).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
-    const dateIssued = selectedMemberData?.cardIssueDate ? 
-      new Date(selectedMemberData.cardIssueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
     
+    const escapedName = escapeHtml(displayName);
+    const escapedDisability = escapeHtml(displayDisability);
+    const escapedIdNumber = escapeHtml(displayIdNumber);
+    const escapedAddress = escapeHtml(displayAddress);
+    const escapedDob = escapeHtml(displayDob);
+    const escapedDateIssued = escapeHtml(displayDateIssued);
+    const escapedGender = escapeHtml(displayGender);
+    const escapedBloodType = escapeHtml(displayBloodType);
+    const escapedContact = escapeHtml(displayContact);
+    const escapedGuardian = escapeHtml(displayGuardian);
+    const escapedProvince = escapeHtml(provinceValue);
+    const escapedCity = escapeHtml(cityValue);
+    const escapedBagong = 'BAGONG CABUYAO';
+
+    const sanitizedPhotoSrc = resolvedPhotoUrl ? escapeHtml(resolvedPhotoUrl) : '';
+    const sanitizedQrSrc = qrCode ? escapeHtml(qrCode) : '';
+
+    const photoMarkup = sanitizedPhotoSrc
+      ? `<img src="${sanitizedPhotoSrc}" alt="ID Photo" />`
+      : '<span class="photo-placeholder-text">2x2</span>';
+
+    const qrMarkup = sanitizedQrSrc
+      ? `<img src="${sanitizedQrSrc}" alt="QR Code" />`
+      : '<span class="qr-placeholder-text">QR CODE</span>';
+
     const printContent = `
       <!DOCTYPE html>
       <html>
         <head>
-          <title>PWD ID Card - ${memberName}</title>
+          <title>PWD ID Card - ${escapeHtml(memberName)}</title>
           <style>
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
+            * { box-sizing: border-box; }
             body {
               font-family: Arial, sans-serif;
               margin: 0;
-              padding: 20px;
-              background: white;
+              padding: 32px;
+              background: #ffffff;
+              color: #111827;
             }
-            .id-card {
-              width: 3in;
-              height: 2in;
-              border: 2px solid #000;
-              background: white;
-              position: relative;
-              margin: 0 auto;
-              box-sizing: border-box;
+            .card {
+              width: 3.35in;
+              height: 2.12in;
+              border: 2px solid #111827;
+              border-radius: 16px;
+              padding: 14px;
+              margin: 0 auto 24px;
               display: flex;
-              flex-direction: row;
+              flex-direction: column;
+              gap: 10px;
             }
-            .top-section {
+            .card-header {
               display: flex;
-              align-items: center;
-              padding: 8px 12px;
-              border-bottom: 1px solid #000;
+              justify-content: space-between;
+              align-items: flex-start;
             }
-            .flag-section {
-              width: 60px;
-              height: 40px;
-              border: 1px solid #000;
-              position: relative;
-              margin-right: 12px;
-              flex-shrink: 0;
-              background: #FFFFFF;
-            }
-            .flag-triangle {
-              position: absolute;
-              left: 0;
-              top: 0;
-              width: 0;
-              height: 0;
-              border-style: solid;
-              border-width: 20px 0 20px 20px;
-              border-color: transparent transparent transparent #FFFFFF;
-              z-index: 1;
-            }
-            .flag-blue {
-              position: absolute;
-              top: 0;
-              left: 20px;
-              width: 40px;
-              height: 20px;
-              background: #0038A8;
-            }
-            .flag-red {
-              position: absolute;
-              bottom: 0;
-              left: 20px;
-              width: 40px;
-              height: 20px;
-              background: #CE1126;
-            }
-            .flag-sun {
-              position: absolute;
-              left: 6px;
-              top: 50%;
-              transform: translateY(-50%);
-              width: 8px;
-              height: 8px;
-              background: #FCD116;
-              border-radius: 50%;
-              z-index: 2;
-            }
-            .flag-star {
-              position: absolute;
-              width: 3px;
-              height: 3px;
-              background: #FCD116;
-              clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
-              z-index: 2;
-            }
-            .header-text {
+            .card-header-text {
               flex: 1;
-              text-align: left;
-            }
-            .header-text h1 {
-              font-size: 11px;
-              font-weight: bold;
-              margin-bottom: 2px;
-              letter-spacing: 0.5px;
-            }
-            .header-text .province {
-              font-size: 9px;
-              margin-bottom: 2px;
-            }
-            .header-text .city {
-              font-size: 9px;
-              font-weight: bold;
-              text-transform: uppercase;
-            }
-            .seal-section {
-              width: 50px;
-              height: 50px;
-              border: 2px solid #000;
-              border-radius: 50%;
-              margin: 0 8px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              flex-shrink: 0;
-              background: white;
-              position: relative;
-            }
-            .seal-inner {
-              width: 40px;
-              height: 40px;
-              border: 1px solid #000;
-              border-radius: 50%;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              font-size: 6px;
               text-align: center;
-              font-weight: bold;
+              line-height: 1.2;
             }
-            .disability-symbol {
-              width: 30px;
-              height: 30px;
-              border: 2px solid #0000FF;
+            .card-header-text .title {
+              font-size: 12px;
+              font-weight: 700;
+              letter-spacing: 0.08em;
+            }
+            .card-header-text .province {
+              font-size: 10px;
+              font-weight: 600;
+            }
+            .card-header-text .city {
+              font-size: 12px;
+              font-weight: 800;
+              letter-spacing: 0.1em;
+            }
+            .logo-group {
+              display: flex;
+              gap: 8px;
+              align-items: center;
+            }
+            .logo-circle {
+              width: 36px;
+              height: 36px;
               border-radius: 50%;
-              background: #0000FF;
-              margin: 0 8px;
+              border: 2px solid #1f2937;
               display: flex;
               align-items: center;
               justify-content: center;
-              flex-shrink: 0;
+              font-size: 8px;
+              font-weight: 700;
+              text-align: center;
+              line-height: 1.1;
+              padding: 2px;
             }
-            .disability-icon {
-              color: white;
+            .logo-pdao {
+              background: #0b87ac;
+              color: #ffffff;
+              border-color: #0b87ac;
               font-size: 18px;
-              font-weight: bold;
             }
-            .id-number {
-              font-size: 14px;
-              font-weight: bold;
-              margin: 4px 0;
-              text-align: center;
-            }
-            .main-content {
+            .front-body {
               display: flex;
+              gap: 14px;
               flex: 1;
-              padding: 8px 12px;
             }
-            .left-column {
+            .front-left {
               flex: 1;
-              padding-right: 12px;
             }
             .field-label {
               font-size: 8px;
-              font-weight: bold;
-              margin-bottom: 2px;
-              text-transform: uppercase;
+              font-weight: 700;
+              letter-spacing: 0.08em;
             }
             .field-value {
-              font-size: 10px;
-              font-weight: bold;
-              margin-bottom: 6px;
-              text-transform: uppercase;
-              text-decoration: underline;
-            }
-            .field-value.name {
-              font-size: 12px;
-            }
-            .field-value.disability {
               font-size: 11px;
+              font-weight: 700;
+              border-bottom: 1px solid #111827;
+              padding-bottom: 4px;
+              margin-bottom: 12px;
             }
-            .signature-line {
-              margin-top: 8px;
-              border-top: 1px solid #000;
-              width: 100%;
-              height: 20px;
-            }
-            .right-column {
-              width: 80px;
+            .front-right {
+              width: 38%;
+              border-left: 1px solid #d1d5db;
+              padding-left: 12px;
               display: flex;
               flex-direction: column;
-              align-items: center;
-              justify-content: space-between;
-              padding-left: 12px;
-              border-left: 1px solid #000;
+              gap: 12px;
             }
-            .photo-placeholder {
-              width: 60px;
-              height: 70px;
-              border: 1px solid #000;
-              background: #F5F5F5;
+            .photo-frame {
+              flex: 1;
+              border: 1px solid #111827;
+              border-radius: 8px;
+              background: #f3f4f6;
               display: flex;
               align-items: center;
               justify-content: center;
-              font-size: 7px;
-              text-align: center;
-              position: relative;
+              overflow: hidden;
             }
-            .photo-placeholder img {
+            .photo-frame img {
               width: 100%;
               height: 100%;
               object-fit: cover;
             }
-            .id-no-field {
-              margin-top: 8px;
-              text-align: center;
+            .photo-placeholder-text {
+              font-size: 12px;
+              font-weight: 600;
+              color: #9ca3af;
             }
-            .id-no-label {
-              font-size: 7px;
-              font-weight: bold;
-              margin-top: 4px;
+            .front-footer {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
             }
-            .footer {
-              padding: 6px 12px;
-              border-top: 1px solid #000;
+            .flag {
+              position: relative;
+              width: 60px;
+              height: 36px;
+              border: 1px solid #111827;
+              border-radius: 4px;
+              overflow: hidden;
+            }
+            .flag .triangle {
+              position: absolute;
+              top: 0;
+              left: 0;
+              width: 0;
+              height: 0;
+              border-style: solid;
+              border-width: 18px 0 18px 24px;
+              border-color: transparent transparent transparent #ffffff;
+              z-index: 2;
+            }
+            .flag .stripe.blue {
+              position: absolute;
+              top: 0;
+              left: 24px;
+              width: 36px;
+              height: 18px;
+              background: #0038a8;
+            }
+            .flag .stripe.red {
+              position: absolute;
+              bottom: 0;
+              left: 24px;
+              width: 36px;
+              height: 18px;
+              background: #ce1126;
+            }
+            .flag .sun {
+              position: absolute;
+              left: 10px;
+              top: 50%;
+              transform: translateY(-50%);
+              width: 12px;
+              height: 12px;
+              background: #fcd116;
+              border-radius: 50%;
+              z-index: 3;
+            }
+            .bagong {
+              font-size: 11px;
+              font-weight: 800;
+              letter-spacing: 0.2em;
+              color: #b71c1c;
+            }
+            .tagline {
               text-align: center;
-              font-size: 6px;
-              font-weight: bold;
-              line-height: 1.3;
+              font-size: 10px;
+              font-weight: 800;
+              letter-spacing: 0.08em;
+            }
+            .back-body {
+              display: flex;
+              gap: 14px;
+              flex: 1;
+            }
+            .qr-box {
+              width: 45%;
+              border: 1px solid #cbd5f5;
+              background: #f3f4f6;
+              border-radius: 12px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              padding: 8px;
+            }
+            .qr-box img {
+              width: 100%;
+              height: 100%;
+              object-fit: contain;
+            }
+            .qr-placeholder-text {
+              font-size: 14px;
+              font-weight: 600;
+              color: #9ca3af;
+            }
+            .details {
+              flex: 1;
+              display: flex;
+              flex-direction: column;
+              gap: 10px;
+            }
+            .detail-field .label {
+              font-size: 8px;
+              letter-spacing: 0.08em;
+              font-weight: 700;
+            }
+            .detail-field .value {
+              font-size: 10px;
+              font-weight: 600;
+              border-bottom: 1px solid #111827;
+              padding-bottom: 4px;
             }
             @media print {
-              body { 
-                margin: 0; 
-                padding: 0;
-              }
-              .id-card { 
+              body {
                 margin: 0;
+                padding: 16px;
+              }
+              .card {
                 page-break-inside: avoid;
               }
             }
           </style>
         </head>
         <body>
-          <!-- Front Side -->
-          <div class="id-card">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; padding: 3px;">
-              <div style="display: flex; align-items: flex-start; gap: 4px; flex: 1;">
-                <div class="flag-section" style="width: 25px; height: 18px;">
-                  <div class="flag-triangle"></div>
-                  <div class="flag-blue"></div>
-                  <div class="flag-red"></div>
-                  <div class="flag-sun"></div>
-                </div>
-                <div style="font-size: 5px; line-height: 1.2;">
-                  <div style="font-weight: bold;">REPUBLIC OF THE</div>
-                  <div style="font-weight: bold;">PHILIPPINES</div>
-                  <div style="font-size: 4px;">Province of ${province}</div>
-                  <div style="font-weight: bold; font-size: 4.5px;">CITY OF ${cityMunicipality}</div>
-                </div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-header-text">
+                <div class="title">REPUBLIC OF THE PHILIPPINES</div>
+                <div class="province">PROVINCE OF ${escapedProvince}</div>
+                <div class="city">CITY OF ${escapedCity}</div>
               </div>
-              <div style="display: flex; gap: 3px; align-items: flex-start;">
-                <div class="disability-symbol" style="width: 18px; height: 18px;">
-                  <span class="disability-icon" style="font-size: 12px;">♿</span>
-                </div>
-                <div class="seal-section" style="width: 18px; height: 18px;">
-                  <div class="seal-inner" style="width: 14px; height: 14px; font-size: 3px;">
-                    LUNGSOD<br>NG<br>CABUYAO<br>2012
-                  </div>
-                </div>
+              <div class="logo-group">
+                <div class="logo-circle">LUNGSOD<br/>NG<br/>CABUYAO<br/>2012</div>
+                <div class="logo-circle logo-pdao">♿</div>
               </div>
             </div>
-            <div style="text-align: center; font-size: 7px; font-weight: bold; color: #FF6B35; margin: 2px 0; letter-spacing: 0.5px;">
-              BAGONG CABUYAO
-            </div>
-            <div style="display: flex; gap: 6px; padding: 3px; flex: 1;">
-              <div style="flex: 1;">
-                <div style="font-size: 5px; font-weight: bold; margin-bottom: 1px;">NAME</div>
-                <div style="font-size: 4px; border-bottom: 1px solid #000; min-height: 8px; margin-bottom: 4px;">${memberName.toUpperCase()}</div>
-                <div style="font-size: 5px; font-weight: bold; margin-bottom: 1px;">DISABILITY</div>
-                <div style="font-size: 4px; border-bottom: 1px solid #000; min-height: 8px; margin-bottom: 4px;">${disabilityType.toUpperCase()}</div>
-                <div style="font-size: 5px; font-weight: bold; margin-bottom: 1px;">ID NO.</div>
-                <div style="font-size: 4px; border-bottom: 1px solid #000; min-height: 8px;">${memberId}</div>
+            <div class="front-body">
+              <div class="front-left">
+                <div class="field">
+                  <div class="field-label">NAME</div>
+                  <div class="field-value">${escapedName}</div>
+                </div>
+                <div class="field">
+                  <div class="field-label">DISABILITY</div>
+                  <div class="field-value">${escapedDisability}</div>
+                </div>
               </div>
-              <div style="width: 35px; height: 45px; border: 1px solid #000; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                ${idPictureUrl ? `<img src="${idPictureUrl}" alt="ID Picture" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'; this.parentElement.innerHTML='<span style=\\'font-size: 4px;\\'>2x2</span>';" />` : '<span style="font-size: 4px;">2x2</span>'}
+              <div class="front-right">
+                <div class="field">
+                  <div class="field-label">ID NO.</div>
+                  <div class="field-value">${escapedIdNumber}</div>
+                </div>
+                <div class="photo-frame">
+                  ${photoMarkup}
+                </div>
               </div>
             </div>
-            <div style="text-align: center; font-size: 4px; font-weight: bold; padding: 2px;">
-              VALID ANYWHERE IN PHILIPPINES
+            <div class="front-footer">
+              <div class="flag">
+                <div class="triangle"></div>
+                <div class="stripe blue"></div>
+                <div class="stripe red"></div>
+                <div class="sun"></div>
+              </div>
+              <div class="bagong">${escapedBagong}</div>
             </div>
+            <div class="tagline">VALID ANYWHERE IN PHILIPPINES</div>
           </div>
-          
-          <!-- Back Side -->
-          <div class="id-card" style="margin-top: 20px;">
-            <div style="display: flex; justify-content: flex-end; align-items: flex-start; padding: 3px;">
-              <div style="display: flex; gap: 3px; align-items: flex-start;">
-                <div style="font-size: 6px; font-weight: bold; color: #FF6B35; align-self: center; letter-spacing: 0.5px;">BAGONG CABUYAO</div>
-                <div class="seal-section" style="width: 18px; height: 18px;">
-                  <div class="seal-inner" style="width: 14px; height: 14px; font-size: 3px;">
-                    LUNGSOD<br>NG<br>CABUYAO<br>2012
-                  </div>
-                </div>
-                <div class="disability-symbol" style="width: 18px; height: 18px;">
-                  <span class="disability-icon" style="font-size: 12px;">♿</span>
-                </div>
+
+          <div class="card">
+            <div class="card-header" style="justify-content: flex-end;">
+              <div class="logo-group">
+                <div class="bagong">${escapedBagong}</div>
+                <div class="logo-circle">LUNGSOD<br/>NG<br/>CABUYAO<br/>2012</div>
+                <div class="logo-circle logo-pdao">♿</div>
               </div>
             </div>
-            <div style="display: flex; gap: 0; padding: 0; flex: 1; height: 100%;">
-              <!-- Left: QR Code - covers whole left half -->
-              <div style="width: 50%; height: 100%; display: flex; align-items: center; justify-content: center; background: #F8F9FA; border-right: 1px solid #E0E0E0; padding: 4px;">
-                ${qrCode ? `<img src="${qrCode}" alt="QR Code" style="width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain;" />` : '<span style="font-size: 5px; color: #BDC3C7;">QR CODE</span>'}
+            <div class="back-body">
+              <div class="qr-box">
+                ${qrMarkup}
               </div>
-              <!-- Right: Member Details - Full height utilization -->
-              <div style="width: 50%; display: flex; flex-direction: column; justify-content: space-between; gap: 3px; padding: 4px; font-size: 4px;">
-                <!-- QR Code Description -->
-                <div style="margin-bottom: 4px;">
-                  <div style="font-size: 3px; color: #7F8C8D; font-style: italic; line-height: 1.3; text-align: justify;">
-                    Scan the QR code to verify card authenticity and access member information digitally.
+              <div class="details">
+                <div class="detail-field">
+                  <div class="label">ADDRESS:</div>
+                  <div class="value">${escapedAddress}</div>
+                </div>
+                <div class="detail-field" style="display:flex; gap:10px;">
+                  <div style="flex:1;">
+                    <div class="label">DATE OF BIRTH:</div>
+                    <div class="value">${escapedDob}</div>
+                  </div>
+                  <div style="flex:1;">
+                    <div class="label">DATE ISSUED:</div>
+                    <div class="value">${escapedDateIssued}</div>
                   </div>
                 </div>
-                <!-- Member Details -->
-                <div style="display: flex; flex-direction: column; gap: 3px; flex: 1;">
-                  <div>
-                    <div style="font-weight: bold; font-size: 4.5px; margin-bottom: 1px;">ADDRESS:</div>
-                    <div style="border-bottom: 1px solid #000; min-height: 7px; font-size: 4px; line-height: 1.3; padding-bottom: 1px;">${address || ''}</div>
+                <div class="detail-field" style="display:flex; gap:10px;">
+                  <div style="flex:1;">
+                    <div class="label">SEX:</div>
+                    <div class="value">${escapedGender}</div>
                   </div>
-                  <div style="display: flex; gap: 5px;">
-                    <div style="flex: 1;">
-                      <div style="font-weight: bold; font-size: 4.5px; margin-bottom: 1px;">DATE OF BIRTH:</div>
-                      <div style="border-bottom: 1px solid #000; min-height: 7px; font-size: 4px; line-height: 1.3; padding-bottom: 1px;">${dob || ''}</div>
-                    </div>
-                    <div style="flex: 1;">
-                      <div style="font-weight: bold; font-size: 4.5px; margin-bottom: 1px;">DATE ISSUED:</div>
-                      <div style="border-bottom: 1px solid #000; min-height: 7px; font-size: 4px; line-height: 1.3; padding-bottom: 1px;">${dateIssued || ''}</div>
-                    </div>
+                  <div style="flex:1;">
+                    <div class="label">BLOOD TYPE:</div>
+                    <div class="value">${escapedBloodType}</div>
                   </div>
-                  <div style="display: flex; gap: 5px;">
-                    <div style="flex: 1;">
-                      <div style="font-weight: bold; font-size: 4.5px; margin-bottom: 1px;">SEX:</div>
-                      <div style="border-bottom: 1px solid #000; min-height: 7px; font-size: 4px; line-height: 1.3; padding-bottom: 1px;">${selectedMemberData?.gender || ''}</div>
-                    </div>
-                    <div style="flex: 1;">
-                      <div style="font-weight: bold; font-size: 4.5px; margin-bottom: 1px;">BLOOD TYPE:</div>
-                      <div style="border-bottom: 1px solid #000; min-height: 7px; font-size: 4px; line-height: 1.3; padding-bottom: 1px;">${selectedMemberData?.bloodType || ''}</div>
-                    </div>
-                  </div>
-                  <div>
-                    <div style="font-weight: bold; font-size: 4.5px; margin-bottom: 1px;">CONTACT NO:</div>
-                    <div style="border-bottom: 1px solid #000; min-height: 7px; font-size: 4px; line-height: 1.3; padding-bottom: 1px;">${selectedMemberData?.contactNumber || ''}</div>
-                  </div>
-                  <div>
-                    <div style="font-weight: bold; font-size: 4.5px; margin-bottom: 1px;">GUARDIAN NAME:</div>
-                    <div style="border-bottom: 1px solid #000; min-height: 7px; font-size: 4px; line-height: 1.3; padding-bottom: 1px;">${selectedMemberData?.guardianName || ''}</div>
-                  </div>
+                </div>
+                <div class="detail-field">
+                  <div class="label">CONTACT NO:</div>
+                  <div class="value">${escapedContact}</div>
+                </div>
+                <div class="detail-field">
+                  <div class="label">GUARDIAN NAME:</div>
+                  <div class="value">${escapedGuardian}</div>
                 </div>
               </div>
             </div>
           </div>
           <script>
-            window.onload = function(){ 
-              setTimeout(function() {
-                window.print(); 
-                setTimeout(function() {
-                  window.close();
-                }, 500);
-              }, 500);
+            window.onload = function(){
+              setTimeout(function(){
+                window.print();
+                window.close();
+              }, 400);
             }
-          </script>
+          <\/script>
         </body>
       </html>
     `;
@@ -1523,6 +1652,76 @@ function PWDCard() {
   }, [pwdMembers, filters, orderBy, order]);
 
   const selectedMemberData = pwdMembers.find(member => member.id === selectedMember) || pwdMembers[0];
+
+  const memberFullName = getMemberFullName(selectedMemberData);
+  const disabilityValue = selectedMemberData?.disabilityType || selectedMemberData?.typeOfDisability || '';
+  const idNumberValue = getMemberIdNumber(selectedMemberData);
+  const addressValue = getMemberAddressLine(selectedMemberData);
+  const dobValue = formatCardDate(selectedMemberData?.dateOfBirth);
+  const dateIssuedValue = formatCardDate(selectedMemberData?.cardIssueDate);
+  const genderValue = selectedMemberData?.gender || '';
+  const bloodTypeValue = selectedMemberData?.bloodType || '';
+  const contactValue = selectedMemberData?.contactNumber || '';
+  const guardianValue = selectedMemberData?.guardianName || '';
+  const provinceValue = (selectedMemberData?.province || 'Laguna').toUpperCase();
+  const cityValue = (selectedMemberData?.cityMunicipality || selectedMemberData?.city || 'Cabuyao').toUpperCase();
+
+  const displayName = withPlaceholder(memberFullName, { uppercase: true });
+  const displayDisability = withPlaceholder(disabilityValue, { uppercase: true });
+  const displayIdNumber = withPlaceholder(idNumberValue, { uppercase: true });
+  const displayAddress = withPlaceholder(addressValue);
+  const displayDob = withPlaceholder(dobValue);
+  const displayDateIssued = withPlaceholder(dateIssuedValue);
+  const displayGender = withPlaceholder(genderValue);
+  const displayBloodType = withPlaceholder(bloodTypeValue);
+  const displayContact = withPlaceholder(contactValue);
+  const displayGuardian = withPlaceholder(guardianValue);
+
+  const resolvedPhotoUrl = useMemo(() => {
+    if (idPictureUrl) return idPictureUrl;
+    if (!selectedMemberData?.idPictures) return null;
+
+    let imagePath = null;
+    if (Array.isArray(selectedMemberData.idPictures)) {
+      imagePath = selectedMemberData.idPictures[0];
+    } else if (typeof selectedMemberData.idPictures === 'string') {
+      try {
+        const parsed = JSON.parse(selectedMemberData.idPictures);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          imagePath = parsed[0];
+        } else {
+          imagePath = selectedMemberData.idPictures;
+        }
+      } catch (error) {
+        imagePath = selectedMemberData.idPictures;
+      }
+    }
+
+    return imagePath ? api.getStorageUrl(imagePath) : null;
+  }, [idPictureUrl, selectedMemberData]);
+
+  useEffect(() => {
+    setPhotoLoadError(false);
+  }, [resolvedPhotoUrl]);
+
+  const renderPhotoPreview = () => {
+    if (resolvedPhotoUrl && !photoLoadError) {
+      return (
+        <img
+          src={resolvedPhotoUrl}
+          alt="ID"
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          onError={() => setPhotoLoadError(true)}
+        />
+      );
+    }
+
+    return (
+      <Typography sx={{ fontSize: '0.7rem', color: '#9CA3AF', fontWeight: 600 }}>
+        2x2
+      </Typography>
+    );
+  };
   
   // Debug member selection
   console.log('=== Member Selection Debug ===');
@@ -2348,570 +2547,304 @@ function PWDCard() {
                   transform: isCardFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)'
                 }}>
                   {/* Front Side */}
-                  <Box sx={{
-                    position: 'absolute',
-                    width: '100%',
-                    height: '100%',
-                    backfaceVisibility: 'hidden',
-                    WebkitBackfaceVisibility: 'hidden',
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: 2,
-                    border: '2px solid #E0E0E0',
-                    p: 2,
-                    boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-                    display: 'flex',
-                    flexDirection: 'column'
-                  }}>
-                    {/* Header Section - Landscape Layout */}
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5, px: 0.5, pt: 0.3 }}>
-                      {/* Left: Philippine Flag and Header Text */}
-                      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5, flex: 1 }}>
-                        {/* Philippine Flag */}
-                        <Box sx={{
-                          width: '30px',
-                          height: '20px',
-                          border: '1px solid #000',
-                          position: 'relative',
-                          flexShrink: 0
-                        }}>
-                          {/* White triangle area */}
-                          <Box sx={{
-                            position: 'absolute',
-                            left: 0,
-                            top: 0,
-                            width: '33%',
-                            height: '100%',
-                            backgroundColor: '#FFFFFF'
-                          }} />
-                          {/* Blue stripe */}
-                          <Box sx={{
-                            position: 'absolute',
-                            right: 0,
-                            top: 0,
-                            width: '67%',
-                            height: '50%',
-                            backgroundColor: '#0038A8'
-                          }} />
-                          {/* Red stripe */}
-                          <Box sx={{
-                            position: 'absolute',
-                            right: 0,
-                            bottom: 0,
-                            width: '67%',
-                            height: '50%',
-                            backgroundColor: '#CE1126'
-                          }} />
-                        </Box>
-                        
-                        {/* Header Text */}
-                        <Box>
-                          <Typography variant="body2" sx={{ 
-                            fontWeight: 'bold', 
-                            fontSize: '7px', 
-                            color: '#2C3E50',
-                            lineHeight: 1.1,
-                            mb: 0.1
-                          }}>
-                            REPUBLIC OF THE PHILIPPINES
-                          </Typography>
-                          <Typography variant="body2" sx={{ 
-                            fontSize: '6px', 
-                            color: '#2C3E50',
-                            lineHeight: 1.1,
-                            mb: 0.1
-                          }}>
-                            PROVINCE OF LAGUNA
-                          </Typography>
-                          <Typography variant="body2" sx={{ 
-                            fontWeight: 'bold', 
-                            fontSize: '6.5px', 
-                            color: '#2C3E50',
-                            lineHeight: 1.1
-                          }}>
-                            CITY OF CABUYAO
-                          </Typography>
-                        </Box>
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      width: '100%',
+                      height: '100%',
+                      backfaceVisibility: 'hidden',
+                      WebkitBackfaceVisibility: 'hidden',
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: 2,
+                      border: '2px solid #E0E0E0',
+                      p: 2,
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 1
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <Box sx={{ flex: 1, textAlign: 'center' }}>
+                        <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#1f2937', lineHeight: 1.2 }}>
+                          REPUBLIC OF THE PHILIPPINES
+                        </Typography>
+                        <Typography sx={{ fontSize: '0.5rem', fontWeight: 500, color: '#1f2937', lineHeight: 1.2 }}>
+                          PROVINCE OF {provinceValue}
+                        </Typography>
+                        <Typography sx={{ fontSize: '0.6rem', fontWeight: 800, color: '#0f172a', letterSpacing: '0.05em' }}>
+                          CITY OF {cityValue}
+                        </Typography>
                       </Box>
-
-                      {/* Right: Logos */}
-                      <Box sx={{ display: 'flex', gap: 0.4, alignItems: 'flex-start' }}>
-                        {/* PDAO Logo */}
-                        <Box sx={{
-                          width: '22px',
-                          height: '22px',
-                          borderRadius: '50%',
-                          backgroundColor: '#0038A8',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          border: '1px solid #000',
-                          flexShrink: 0
-                        }}>
-                          <Typography sx={{ fontSize: '14px', color: '#FFFFFF' }}>♿</Typography>
-                        </Box>
-                        {/* City Seal */}
-                        <Box sx={{
-                          width: '22px',
-                          height: '22px',
-                          borderRadius: '50%',
-                          border: '1px solid #000',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                          backgroundColor: '#FFFFFF'
-                        }}>
-                          <Typography sx={{ fontSize: '4px', fontWeight: 'bold', textAlign: 'center', lineHeight: 1 }}>
-                            LUNGSOD<br/>NG<br/>CABUYAO<br/>2012
-                          </Typography>
-                        </Box>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <CitySeal size={28} />
+                        <PdaoLogo size={28} />
                       </Box>
                     </Box>
 
-                    {/* BAGONG CABUYAO Text */}
-                    <Typography sx={{
-                      fontSize: '9px',
-                      fontWeight: 'bold',
-                      color: '#FF6B35',
-                      textAlign: 'center',
-                      mb: 0.3,
-                      letterSpacing: '0.5px'
-                    }}>
-                      BAGONG CABUYAO
-                    </Typography>
-
-                    {/* Main Content - Landscape Layout */}
-                    <Box sx={{ display: 'flex', gap: 1, flex: 1, px: 0.5, alignItems: 'center' }}>
-                      {/* Left: Member Info */}
-                      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 0.3 }}>
-                        <Box>
-                          <Typography variant="body2" sx={{ 
-                            fontSize: '7px', 
-                            color: '#2C3E50', 
-                            fontWeight: 'bold',
-                            mb: 0.1
-                          }}>
+                    <Box sx={{ flex: 1, display: 'flex', gap: 2 }}>
+                      <Box sx={{ flex: 1 }}>
+                        <Box sx={{ mb: 1.5 }}>
+                          <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#1f2937', letterSpacing: '0.08em' }}>
                             NAME
                           </Typography>
-                          <Typography variant="body2" sx={{ 
-                            fontSize: '6px', 
-                            color: '#2C3E50',
-                            mb: 0.3,
-                            borderBottom: '1px solid #000',
-                            minHeight: '12px',
-                            lineHeight: 1.2
-                          }}>
-                            {selectedMemberData?.name || '________________'}
+                          <Typography
+                            sx={{
+                              fontSize: '0.65rem',
+                              fontWeight: 700,
+                              color: '#111827',
+                              borderBottom: '1px solid #111827',
+                              pb: 0.3
+                            }}
+                          >
+                            {displayName}
                           </Typography>
-
-                          <Typography variant="body2" sx={{ 
-                            fontSize: '7px', 
-                            color: '#2C3E50', 
-                            fontWeight: 'bold',
-                            mb: 0.1,
-                            mt: 0.3
-                          }}>
+                        </Box>
+                        <Box sx={{ mb: 1.5 }}>
+                          <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#1f2937', letterSpacing: '0.08em' }}>
                             DISABILITY
                           </Typography>
-                          <Typography variant="body2" sx={{ 
-                            fontSize: '6px', 
-                            color: '#2C3E50',
-                            mb: 0.3,
-                            borderBottom: '1px solid #000',
-                            minHeight: '12px',
-                            lineHeight: 1.2
-                          }}>
-                            {selectedMemberData?.disabilityType || '________________'}
-                          </Typography>
-
-                          <Typography variant="body2" sx={{ 
-                            fontSize: '7px', 
-                            color: '#2C3E50', 
-                            fontWeight: 'bold',
-                            mb: 0.1,
-                            mt: 0.3
-                          }}>
-                            ID NO.
-                          </Typography>
-                          <Typography variant="body2" sx={{ 
-                            fontSize: '6px', 
-                            color: '#2C3E50',
-                            borderBottom: '1px solid #000',
-                            minHeight: '12px',
-                            lineHeight: 1.2
-                          }}>
-                            {selectedMemberData?.id || '________________'}
+                          <Typography
+                            sx={{
+                              fontSize: '0.6rem',
+                              fontWeight: 700,
+                              color: '#111827',
+                              borderBottom: '1px solid #111827',
+                              pb: 0.3
+                            }}
+                          >
+                            {displayDisability}
                           </Typography>
                         </Box>
                       </Box>
 
-                      {/* Right: Photo */}
-                      <Box sx={{
-                        width: '70px',
-                        height: '90px',
-                        backgroundColor: '#F8F9FA',
-                        border: '1px solid #000',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        overflow: 'hidden',
-                        flexShrink: 0,
-                        position: 'relative'
-                      }}>
-                        {(() => {
-                          if (idPictureUrl) {
-                            return (
-                              <img
-                                src={idPictureUrl}
-                                alt="ID Picture"
-                                style={{
-                                  width: '100%',
-                                  height: '100%',
-                                  objectFit: 'cover',
-                                  position: 'absolute',
-                                  top: 0,
-                                  left: 0
-                                }}
-                                onError={(e) => {
-                                  e.target.style.display = 'none';
-                                }}
-                              />
-                            );
-                          }
-                          if (selectedMemberData?.idPictures) {
-                            let imagePath = null;
-                            if (Array.isArray(selectedMemberData.idPictures)) {
-                              imagePath = selectedMemberData.idPictures[0];
-                            } else if (typeof selectedMemberData.idPictures === 'string') {
-                              try {
-                                const parsed = JSON.parse(selectedMemberData.idPictures);
-                                if (Array.isArray(parsed) && parsed.length > 0) {
-                                  imagePath = parsed[0];
-                                }
-                              } catch (e) {
-                                imagePath = selectedMemberData.idPictures;
-                              }
-                            }
-                            if (imagePath) {
-                              const fullUrl = api.getStorageUrl(imagePath);
-                              return (
-                                <img
-                                  src={fullUrl}
-                                  alt="ID Picture"
-                                  style={{
-                                    width: '100%',
-                                    height: '100%',
-                                    objectFit: 'cover',
-                                    position: 'absolute',
-                                    top: 0,
-                                    left: 0
-                                  }}
-                                  onError={(e) => {
-                                    e.target.style.display = 'none';
-                                  }}
-                                />
-                              );
-                            }
-                          }
-                          return (
-                            <Typography sx={{ fontSize: '6px', color: '#BDC3C7', textAlign: 'center' }}>
-                              2x2
-                            </Typography>
-                          );
-                        })()}
+                      <Box
+                        sx={{
+                          width: '38%',
+                          borderLeft: '1px solid #E5E7EB',
+                          pl: 2,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 1
+                        }}
+                      >
+                        <Box>
+                          <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#1f2937', letterSpacing: '0.08em' }}>
+                            ID NO.
+                          </Typography>
+                          <Typography
+                            sx={{
+                              fontSize: '0.65rem',
+                              fontWeight: 700,
+                              color: '#0f172a',
+                              borderBottom: '1px solid #111827',
+                              pb: 0.3
+                            }}
+                          >
+                            {displayIdNumber}
+                          </Typography>
+                        </Box>
+                        <Box
+                          sx={{
+                            flex: 1,
+                            borderRadius: 2,
+                            border: '1px solid #1f2937',
+                            bgcolor: '#F3F4F6',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            overflow: 'hidden',
+                            position: 'relative'
+                          }}
+                        >
+                          {renderPhotoPreview()}
+                        </Box>
                       </Box>
                     </Box>
-                    
-                    {/* Footer */}
-                    <Typography variant="body2" sx={{ 
-                      fontWeight: 'bold', 
-                      fontSize: '5px', 
-                      color: '#2C3E50',
-                      textAlign: 'center',
-                      mt: 'auto',
-                      pt: 0.3
-                    }}>
+
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <FlagIcon width={60} height={36} />
+                      <BagongWordmark fontSize="0.62rem" align="right" />
+                    </Box>
+                    <Typography
+                      sx={{
+                        fontSize: '0.55rem',
+                        fontWeight: 800,
+                        textAlign: 'center',
+                        color: '#111827',
+                        letterSpacing: '0.08em'
+                      }}
+                    >
                       VALID ANYWHERE IN PHILIPPINES
                     </Typography>
                   </Box>
 
                   {/* Back Side */}
-                  <Box sx={{
-                    position: 'absolute',
-                    width: '100%',
-                    height: '100%',
-                    backfaceVisibility: 'hidden',
-                    WebkitBackfaceVisibility: 'hidden',
-                    backgroundColor: '#FFFFFF',
-                    borderRadius: 2,
-                    border: '2px solid #E0E0E0',
-                    p: 2,
-                    boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-                    transform: 'rotateY(180deg)',
-                    display: 'flex',
-                    flexDirection: 'column'
-                  }}>
-                    {/* Header with Logos - Landscape */}
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-start', mb: 0.3, px: 0.5, pt: 0.3 }}>
-                      <Box sx={{ display: 'flex', gap: 0.4, alignItems: 'flex-start' }}>
-                        {/* BAGONG CABUYAO Text */}
-                        <Typography sx={{
-                          fontSize: '7px',
-                          fontWeight: 'bold',
-                          color: '#FF6B35',
-                          letterSpacing: '0.5px',
-                          alignSelf: 'center'
-                        }}>
-                          BAGONG CABUYAO
-                        </Typography>
-                        {/* City Seal */}
-                        <Box sx={{
-                          width: '22px',
-                          height: '22px',
-                          borderRadius: '50%',
-                          border: '1px solid #000',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                          backgroundColor: '#FFFFFF'
-                        }}>
-                          <Typography sx={{ fontSize: '4px', fontWeight: 'bold', textAlign: 'center', lineHeight: 1 }}>
-                            LUNGSOD<br/>NG<br/>CABUYAO<br/>2012
-                          </Typography>
-                        </Box>
-                        {/* PDAO Logo */}
-                        <Box sx={{
-                          width: '22px',
-                          height: '22px',
-                          borderRadius: '50%',
-                          backgroundColor: '#0038A8',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          border: '1px solid #000',
-                          flexShrink: 0
-                        }}>
-                          <Typography sx={{ fontSize: '14px', color: '#FFFFFF' }}>♿</Typography>
-                        </Box>
-                      </Box>
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      width: '100%',
+                      height: '100%',
+                      backfaceVisibility: 'hidden',
+                      WebkitBackfaceVisibility: 'hidden',
+                      backgroundColor: '#FFFFFF',
+                      borderRadius: 2,
+                      border: '2px solid #E0E0E0',
+                      p: 2,
+                      boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
+                      transform: 'rotateY(180deg)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 1
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 1 }}>
+                      <BagongWordmark fontSize="0.6rem" align="right" />
+                      <CitySeal size={24} />
+                      <PdaoLogo size={24} />
                     </Box>
 
-                    {/* Main Content - Landscape Layout: QR Code covers whole left side */}
-                    <Box sx={{ display: 'flex', gap: 0, flex: 1, px: 0, alignItems: 'stretch' }}>
-                      {/* Left: QR Code - covers whole left half */}
-                      <Box sx={{
-                        width: '50%',
-                        height: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: '#F8F9FA',
-                        borderRight: '1px solid #E0E0E0',
-                        p: 1
-                      }}>
+                    <Box sx={{ flex: 1, display: 'flex', gap: 1.5 }}>
+                      <Box
+                        sx={{
+                          width: '45%',
+                          border: '1px solid #CBD5F5',
+                          borderRadius: 2,
+                          bgcolor: '#F3F4F6',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          p: 1,
+                          textAlign: 'center'
+                        }}
+                      >
                         {qrCodeDataURL ? (
-                          <img 
-                            src={qrCodeDataURL} 
-                            alt="QR Code" 
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              maxWidth: '100%',
-                              maxHeight: '100%',
-                              objectFit: 'contain'
-                            }}
+                          <img
+                            src={qrCodeDataURL}
+                            alt="QR Code"
+                            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                           />
                         ) : (
-                          <Typography sx={{ fontSize: '8px', color: '#BDC3C7', textAlign: 'center' }}>
-                            QR CODE
-                          </Typography>
+                          <Typography sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#9CA3AF' }}>QR CODE</Typography>
                         )}
                       </Box>
-
-                      {/* Right: Member Details - Full height utilization */}
-                      <Box sx={{ 
-                        width: '50%', 
-                        display: 'flex', 
-                        flexDirection: 'column', 
-                        justifyContent: 'space-between',
-                        gap: 0.4,
-                        px: 0.8,
-                        py: 0.8,
-                        height: '100%'
-                      }}>
-                        {/* QR Code Description */}
-                        <Box sx={{ mb: 0.5 }}>
-                          <Typography variant="body2" sx={{ 
-                            fontSize: '5px', 
-                            color: '#7F8C8D', 
-                            fontStyle: 'italic',
-                            lineHeight: 1.3,
-                            textAlign: 'justify'
-                          }}>
-                            Scan the QR code to verify card authenticity and access member information digitally.
+                      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        <Box>
+                          <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#111827', letterSpacing: '0.08em' }}>
+                            ADDRESS:
+                          </Typography>
+                          <Typography
+                            sx={{
+                              fontSize: '0.6rem',
+                              fontWeight: 600,
+                              color: '#111827',
+                              borderBottom: '1px solid #111827',
+                              pb: 0.2
+                            }}
+                          >
+                            {displayAddress}
                           </Typography>
                         </Box>
-
-                        {/* Member Details */}
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4, flex: 1 }}>
-                          <Box>
-                            <Typography variant="body2" sx={{ 
-                              fontSize: '6.5px', 
-                              color: '#2C3E50', 
-                              fontWeight: 'bold',
-                              mb: 0.15
-                            }}>
-                              ADDRESS:
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Box sx={{ flex: 1 }}>
+                            <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#111827', letterSpacing: '0.08em' }}>
+                              DATE OF BIRTH:
                             </Typography>
-                            <Typography variant="body2" sx={{ 
-                              fontSize: '5.5px', 
-                              color: '#2C3E50',
-                              borderBottom: '1px solid #000',
-                              minHeight: '12px',
-                              lineHeight: 1.3,
-                              pb: 0.1
-                            }}>
-                              {(() => {
-                                const addressParts = [];
-                                if (selectedMemberData?.address) addressParts.push(selectedMemberData.address);
-                                if (selectedMemberData?.barangay && selectedMemberData.barangay !== 'N/A') addressParts.push(selectedMemberData.barangay);
-                                const city = selectedMemberData?.city && selectedMemberData.city !== 'N/A' ? selectedMemberData.city : 'Cabuyao';
-                                addressParts.push(city);
-                                const province = selectedMemberData?.province && selectedMemberData.province !== 'N/A' ? selectedMemberData.province : 'Laguna';
-                                addressParts.push(province);
-                                return addressParts.length > 0 ? addressParts.join(', ') : '________________';
-                              })()}
+                            <Typography
+                              sx={{
+                                fontSize: '0.6rem',
+                                fontWeight: 600,
+                                color: '#111827',
+                                borderBottom: '1px solid #111827',
+                                pb: 0.2
+                              }}
+                            >
+                              {displayDob}
                             </Typography>
                           </Box>
-
-                          <Box sx={{ display: 'flex', gap: 0.8 }}>
-                            <Box sx={{ flex: 1 }}>
-                              <Typography variant="body2" sx={{ 
-                                fontSize: '6.5px', 
-                                color: '#2C3E50', 
-                                fontWeight: 'bold',
-                                mb: 0.15
-                              }}>
-                                DATE OF BIRTH:
-                              </Typography>
-                              <Typography variant="body2" sx={{ 
-                                fontSize: '5.5px', 
-                                color: '#2C3E50',
-                                borderBottom: '1px solid #000',
-                                minHeight: '12px',
-                                lineHeight: 1.3,
-                                pb: 0.1
-                              }}>
-                                {selectedMemberData?.dateOfBirth ? new Date(selectedMemberData.dateOfBirth).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '________________'}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ flex: 1 }}>
-                              <Typography variant="body2" sx={{ 
-                                fontSize: '6.5px', 
-                                color: '#2C3E50', 
-                                fontWeight: 'bold',
-                                mb: 0.15
-                              }}>
-                                DATE ISSUED:
-                              </Typography>
-                              <Typography variant="body2" sx={{ 
-                                fontSize: '5.5px', 
-                                color: '#2C3E50',
-                                borderBottom: '1px solid #000',
-                                minHeight: '12px',
-                                lineHeight: 1.3,
-                                pb: 0.1
-                              }}>
-                                {selectedMemberData?.cardIssueDate ? new Date(selectedMemberData.cardIssueDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '________________'}
-                              </Typography>
-                            </Box>
-                          </Box>
-
-                          <Box sx={{ display: 'flex', gap: 0.8 }}>
-                            <Box sx={{ flex: 1 }}>
-                              <Typography variant="body2" sx={{ 
-                                fontSize: '6.5px', 
-                                color: '#2C3E50', 
-                                fontWeight: 'bold',
-                                mb: 0.15
-                              }}>
-                                SEX:
-                              </Typography>
-                              <Typography variant="body2" sx={{ 
-                                fontSize: '5.5px', 
-                                color: '#2C3E50',
-                                borderBottom: '1px solid #000',
-                                minHeight: '12px',
-                                lineHeight: 1.3,
-                                pb: 0.1
-                              }}>
-                                {selectedMemberData?.gender || '________________'}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ flex: 1 }}>
-                              <Typography variant="body2" sx={{ 
-                                fontSize: '6.5px', 
-                                color: '#2C3E50', 
-                                fontWeight: 'bold',
-                                mb: 0.15
-                              }}>
-                                BLOOD TYPE:
-                              </Typography>
-                              <Typography variant="body2" sx={{ 
-                                fontSize: '5.5px', 
-                                color: '#2C3E50',
-                                borderBottom: '1px solid #000',
-                                minHeight: '12px',
-                                lineHeight: 1.3,
-                                pb: 0.1
-                              }}>
-                                {selectedMemberData?.bloodType || '________________'}
-                              </Typography>
-                            </Box>
-                          </Box>
-
-                          <Box>
-                            <Typography variant="body2" sx={{ 
-                              fontSize: '6.5px', 
-                              color: '#2C3E50', 
-                              fontWeight: 'bold',
-                              mb: 0.15
-                            }}>
-                              CONTACT NO:
+                          <Box sx={{ flex: 1 }}>
+                            <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#111827', letterSpacing: '0.08em' }}>
+                              DATE ISSUED:
                             </Typography>
-                            <Typography variant="body2" sx={{ 
-                              fontSize: '5.5px', 
-                              color: '#2C3E50',
-                              borderBottom: '1px solid #000',
-                              minHeight: '12px',
-                              lineHeight: 1.3,
-                              pb: 0.1
-                            }}>
-                              {selectedMemberData?.contactNumber || '________________'}
+                            <Typography
+                              sx={{
+                                fontSize: '0.6rem',
+                                fontWeight: 600,
+                                color: '#111827',
+                                borderBottom: '1px solid #111827',
+                                pb: 0.2
+                              }}
+                            >
+                              {displayDateIssued}
                             </Typography>
                           </Box>
-
-                          <Box>
-                            <Typography variant="body2" sx={{ 
-                              fontSize: '6.5px', 
-                              color: '#2C3E50', 
-                              fontWeight: 'bold',
-                              mb: 0.15
-                            }}>
-                              GUARDIAN NAME:
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Box sx={{ flex: 1 }}>
+                            <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#111827', letterSpacing: '0.08em' }}>
+                              SEX:
                             </Typography>
-                            <Typography variant="body2" sx={{ 
-                              fontSize: '5.5px', 
-                              color: '#2C3E50',
-                              borderBottom: '1px solid #000',
-                              minHeight: '12px',
-                              lineHeight: 1.3,
-                              pb: 0.1
-                            }}>
-                              {selectedMemberData?.guardianName || '________________'}
+                            <Typography
+                              sx={{
+                                fontSize: '0.6rem',
+                                fontWeight: 600,
+                                color: '#111827',
+                                borderBottom: '1px solid #111827',
+                                pb: 0.2
+                              }}
+                            >
+                              {displayGender}
                             </Typography>
                           </Box>
+                          <Box sx={{ flex: 1 }}>
+                            <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#111827', letterSpacing: '0.08em' }}>
+                              BLOOD TYPE:
+                            </Typography>
+                            <Typography
+                              sx={{
+                                fontSize: '0.6rem',
+                                fontWeight: 600,
+                                color: '#111827',
+                                borderBottom: '1px solid #111827',
+                                pb: 0.2
+                              }}
+                            >
+                              {displayBloodType}
+                            </Typography>
+                          </Box>
+                        </Box>
+                        <Box>
+                          <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#111827', letterSpacing: '0.08em' }}>
+                            CONTACT NO:
+                          </Typography>
+                          <Typography
+                            sx={{
+                              fontSize: '0.6rem',
+                              fontWeight: 600,
+                              color: '#111827',
+                              borderBottom: '1px solid #111827',
+                              pb: 0.2
+                            }}
+                          >
+                            {displayContact}
+                          </Typography>
+                        </Box>
+                        <Box>
+                          <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#111827', letterSpacing: '0.08em' }}>
+                            GUARDIAN NAME:
+                          </Typography>
+                          <Typography
+                            sx={{
+                              fontSize: '0.6rem',
+                              fontWeight: 600,
+                              color: '#111827',
+                              borderBottom: '1px solid #111827',
+                              pb: 0.2
+                            }}
+                          >
+                            {displayGuardian}
+                          </Typography>
                         </Box>
                       </Box>
                     </Box>

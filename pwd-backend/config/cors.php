@@ -25,6 +25,7 @@ return [
         'http://127.0.0.1:3000',
         'http://127.0.0.1:5173',
         'https://communication-bathrooms-jean-employ.trycloudflare.com',
+        'https://brian-exhibition-applicants-identifying.trycloudflare.com',
     ],
 
     'allowed_origins_patterns' => [

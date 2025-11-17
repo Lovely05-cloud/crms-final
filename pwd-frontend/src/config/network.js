@@ -22,8 +22,8 @@ const PRODUCTION_CONFIG = {
 // Cloudflare Tunnel Configuration
 const CLOUDFLARE_TUNNEL_CONFIG = {
   // Backend API through Cloudflare tunnel
-  API_BASE_URL: 'https://examines-electric-kim-took.trycloudflare.com/api',
-  STORAGE_BASE_URL: 'https://examines-electric-kim-took.trycloudflare.com',
+  API_BASE_URL: 'https://trained-portion-dec-trek.trycloudflare.com/api',
+  STORAGE_BASE_URL: 'https://trained-portion-dec-trek.trycloudflare.com',
 };
 
 // Auto-detect environment
