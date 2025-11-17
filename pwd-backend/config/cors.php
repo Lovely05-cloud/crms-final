@@ -26,6 +26,7 @@ return [
         'http://127.0.0.1:5173',
         'https://communication-bathrooms-jean-employ.trycloudflare.com',
         'https://brian-exhibition-applicants-identifying.trycloudflare.com',
+        'https://spaces-counting-general-before.trycloudflare.com',
     ],
 
     'allowed_origins_patterns' => [

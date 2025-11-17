@@ -1,5 +1,5 @@
 // src/components/cards/PWDCard.js
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -123,133 +123,46 @@ const withPlaceholder = (value, { uppercase = false } = {}) => {
   return uppercase ? text.toUpperCase() : text;
 };
 
-const FlagIcon = ({ width = 60, height = 36 }) => (
-  <Box
-    sx={{
-      width,
-      height,
-      border: '1px solid #111827',
-      borderRadius: '4px',
-      position: 'relative',
-      overflow: 'hidden',
-      backgroundColor: '#FFFFFF',
-      flexShrink: 0
-    }}
-  >
-    <Box
-      sx={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        width: '35%',
-        height: '100%',
-        backgroundColor: '#FFFFFF',
-        clipPath: 'polygon(0 0, 0 100%, 100% 50%)',
-        zIndex: 2
-      }}
-    />
-    <Box
-      sx={{
-        position: 'absolute',
-        top: 0,
-        left: '35%',
-        width: '65%',
-        height: '50%',
-        backgroundColor: '#0038A8'
-      }}
-    />
-    <Box
-      sx={{
-        position: 'absolute',
-        bottom: 0,
-        left: '35%',
-        width: '65%',
-        height: '50%',
-        backgroundColor: '#CE1126'
-      }}
-    />
-    <Box
-      sx={{
-        position: 'absolute',
-        left: '12%',
-        top: '50%',
-        transform: 'translateY(-50%)',
-        width: height * 0.35,
-        height: height * 0.35,
-        borderRadius: '50%',
-        backgroundColor: '#FCD116',
-        zIndex: 3
-      }}
-    />
-  </Box>
+const LOGO_FILES = {
+  flag: 'Philippine Flag.jpg',
+  bagong: 'Bagong Cabuyao Logo.jpg',
+  pdao: 'PDAO Logo.jpg',
+  seal: 'Lungsod ng cabuyao Logo.jpg'
+};
+
+const buildLogoUrl = (filename) => {
+  const basePath = process.env.PUBLIC_URL || '';
+  const encoded = filename
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  return `${basePath}/logos/${encoded}`.replace(/([^:]\/)\/+/g, '$1');
+};
+
+const LOGO_URLS = Object.fromEntries(
+  Object.entries(LOGO_FILES).map(([key, filename]) => [key, buildLogoUrl(filename)])
 );
 
-const CitySeal = ({ size = 28 }) => (
-  <Box
-    sx={{
-      width: size,
-      height: size,
-      borderRadius: '50%',
-      border: '1.5px solid #1f2937',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: '#FFFFFF',
-      flexShrink: 0,
-      px: 0.5
-    }}
-  >
-    <Typography
-      component="span"
-      sx={{
-        fontSize: size * 0.26,
-        fontWeight: 700,
-        lineHeight: 1.05,
-        textAlign: 'center',
-        color: '#1f2937'
-      }}
-    >
-      LUNGSOD<br />NG<br />CABUYAO<br />2012
-    </Typography>
-  </Box>
-);
+const detectImageFormat = (dataUrl) => {
+  const match = dataUrl?.match(/^data:image\/(png|jpeg|jpg)/i);
+  if (!match) return 'PNG';
+  const extension = match[1].toUpperCase();
+  return extension === 'JPG' ? 'JPEG' : extension;
+};
 
-const PdaoLogo = ({ size = 28 }) => (
-  <Box
-    sx={{
-      width: size,
-      height: size,
-      borderRadius: '50%',
-      border: '1.5px solid #0b87ac',
-      backgroundColor: '#0b87ac',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      flexShrink: 0
-    }}
-  >
-    <Typography
-      component="span"
-      sx={{ fontSize: size * 0.5, fontWeight: 700, color: '#FFFFFF', lineHeight: 1 }}
-    >
-      ♿
-    </Typography>
-  </Box>
-);
-
-const BagongWordmark = ({ fontSize = '0.7rem', align = 'center' }) => (
-  <Typography
-    sx={{
-      fontWeight: 800,
-      letterSpacing: '0.2em',
-      color: '#B71C1C',
-      fontSize,
-      textAlign: align
-    }}
-  >
-    BAGONG CABUYAO
-  </Typography>
-);
+const fetchImageDataUrl = async (url) => {
+  const response = await fetch(url, { cache: 'force-cache' });
+  if (!response.ok) {
+    throw new Error(`Failed to load asset: ${url}`);
+  }
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
 
 function PWDCard() {
   const { currentUser } = useAuth();
@@ -262,6 +175,42 @@ function PWDCard() {
   const [idPictureUrl, setIdPictureUrl] = useState(null);
   const [isCardFlipped, setIsCardFlipped] = useState(false);
   const [photoLoadError, setPhotoLoadError] = useState(false);
+  const logoAssetsRef = useRef({});
+
+  const ensureLogoAssetsLoaded = useCallback(async () => {
+    const currentAssets = logoAssetsRef.current;
+    const missingKeys = Object.keys(LOGO_FILES).filter((key) => !currentAssets[key]);
+
+    if (!missingKeys.length) {
+      return currentAssets;
+    }
+
+    const loadedEntries = await Promise.all(
+      missingKeys.map(async (key) => {
+        try {
+          const dataUrl = await fetchImageDataUrl(LOGO_URLS[key]);
+          return [key, { dataUrl, format: detectImageFormat(dataUrl) }];
+        } catch (error) {
+          console.error(`Failed to load ${key} asset`, error);
+          return null;
+        }
+      })
+    );
+
+    const nextAssets = { ...currentAssets };
+    loadedEntries.forEach((entry) => {
+      if (!entry) return;
+      const [key, asset] = entry;
+      nextAssets[key] = asset;
+    });
+
+    logoAssetsRef.current = nextAssets;
+    return nextAssets;
+  }, []);
+
+  useEffect(() => {
+    ensureLogoAssetsLoaded();
+  }, [ensureLogoAssetsLoaded]);
   
   // Success modal
   const { modalOpen, modalConfig, showModal, hideModal } = useModal();
@@ -437,9 +386,23 @@ function PWDCard() {
       // Set the members from API (no fallback to mock data)
       setPwdMembers(transformedMembers);
       
-      // Set first member as selected if none selected and members exist
-      if (!selectedMember && transformedMembers.length > 0) {
-        setSelectedMember(transformedMembers[0].id);
+      // Handle selected member preservation when filters change
+      if (transformedMembers.length > 0) {
+        if (!selectedMember) {
+          // No member selected, select the first one
+          setSelectedMember(transformedMembers[0].id);
+        } else {
+          // Check if currently selected member is still in the filtered results
+          const isSelectedMemberInResults = transformedMembers.some(m => m.id === selectedMember);
+          if (!isSelectedMemberInResults) {
+            // Selected member is not in filtered results, select the first member
+            setSelectedMember(transformedMembers[0].id);
+          }
+          // If selected member is still in results, keep it selected (no change needed)
+        }
+      } else {
+        // No members in filtered results, clear selection
+        setSelectedMember(null);
       }
     } catch (err) {
       console.error('Error fetching PWD members:', err);
@@ -492,21 +455,23 @@ function PWDCard() {
           );
           
           // Handle both camelCase (from backend) and snake_case (normalized)
+          // The structure is: member.memberDocuments is an array of MemberDocument records
           const memberDocs = targetMember.memberDocuments || targetMember.member_documents || [];
           
           if (memberDocs.length > 0) {
-            // Find the ID Pictures document for this member
+            // Find the ID Pictures MemberDocument record
+            // Each memberDoc is a MemberDocument with a requiredDocument relationship
             const idPicturesDoc = memberDocs.find(md => {
-              const docName = md.requiredDocument?.name || md.required_document?.name;
+              const docName = md.requiredDocument?.name || md.required_document?.name || 
+                             md.requiredDocumentName || md.required_document_name;
               return docName === 'ID Pictures' || docName === 'ID Picture';
             });
             
             if (idPicturesDoc) {
-              const memberDoc = idPicturesDoc;
-              
-              if (memberDoc.id) {
+              // idPicturesDoc IS the upload record, not a document type with nested uploads
+              if (idPicturesDoc.id) {
                 // Use the document-file API endpoint to get the authenticated URL
-                const fileUrl = api.getFilePreviewUrl('document-file', memberDoc.id);
+                const fileUrl = api.getFilePreviewUrl('document-file', idPicturesDoc.id);
                 
                 // Add authentication token if available
                 const token = localStorage.getItem('auth.token');
@@ -518,7 +483,7 @@ function PWDCard() {
                       const separator = fileUrl.includes('?') ? '&' : '?';
                       const finalUrl = `${fileUrl}${separator}token=${tokenValue}`;
                       setIdPictureUrl(finalUrl);
-                      console.log('ID picture URL set from member documents:', finalUrl);
+                      console.log('ID picture URL set from member documents (member_doc id):', finalUrl);
                       return;
                     }
                   } catch (error) {
@@ -527,17 +492,79 @@ function PWDCard() {
                 }
                 
                 setIdPictureUrl(fileUrl);
-                console.log('ID picture URL set from member documents:', fileUrl);
-              } else {
-                console.log('Member document has no ID, cannot fetch file');
-                setIdPictureUrl(null);
+                console.log('ID picture URL set from member documents (member_doc id):', fileUrl);
+                return;
               }
+              
+              const filePath = idPicturesDoc.file_path || idPicturesDoc.filePath;
+              if (filePath) {
+                const storageUrl = api.getStorageUrl(filePath);
+                setIdPictureUrl(storageUrl);
+                console.log('ID picture URL set from file path:', storageUrl);
+                return;
+              }
+              
+              console.log('ID Pictures document found but no file path or ID available');
             } else {
-              console.log('No ID Pictures document found in member documents');
+              console.log('No ID Pictures document found in member documents, checking application files...');
+              
+              // Fallback: Check if member has idPictures in their profile (from application)
+              if (member.idPictures) {
+                let imagePath = null;
+                if (Array.isArray(member.idPictures)) {
+                  imagePath = member.idPictures[0];
+                } else if (typeof member.idPictures === 'string') {
+                  try {
+                    const parsed = JSON.parse(member.idPictures);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                      imagePath = parsed[0];
+                    } else {
+                      imagePath = member.idPictures;
+                    }
+                  } catch (error) {
+                    imagePath = member.idPictures;
+                  }
+                }
+                
+                if (imagePath) {
+                  const storageUrl = api.getStorageUrl(imagePath);
+                  setIdPictureUrl(storageUrl);
+                  console.log('ID picture URL set from application file (fallback):', storageUrl);
+                  return;
+                }
+              }
+              
               setIdPictureUrl(null);
             }
           } else {
-            console.log('No documents found for this member');
+            console.log('No documents found for this member, checking application files...');
+            
+            // Fallback: Check if member has idPictures in their profile (from application)
+            if (member.idPictures) {
+              let imagePath = null;
+              if (Array.isArray(member.idPictures)) {
+                imagePath = member.idPictures[0];
+              } else if (typeof member.idPictures === 'string') {
+                try {
+                  const parsed = JSON.parse(member.idPictures);
+                  if (Array.isArray(parsed) && parsed.length > 0) {
+                    imagePath = parsed[0];
+                  } else {
+                    imagePath = member.idPictures;
+                  }
+                } catch (error) {
+                  imagePath = member.idPictures;
+                }
+              }
+              
+              if (imagePath) {
+                const storageUrl = api.getStorageUrl(imagePath);
+                setIdPictureUrl(storageUrl);
+                console.log('ID picture URL set from application file (fallback):', storageUrl);
+                return;
+              }
+            }
+            
             setIdPictureUrl(null);
           }
         } else {
@@ -608,6 +635,14 @@ function PWDCard() {
         unit: 'in',
         format: [6.5, 2]
       });
+      const logos = await ensureLogoAssetsLoaded();
+      const addLogoImage = (asset, x, y, width, height, fallback) => {
+        if (asset?.dataUrl) {
+          pdf.addImage(asset.dataUrl, asset.format || 'PNG', x, y, width, height);
+        } else if (typeof fallback === 'function') {
+          fallback();
+        }
+      };
 
       // Set up dimensions for each card
       const cardWidth = 3;
@@ -634,39 +669,51 @@ function PWDCard() {
 
       const centerX = frontCardX + cardWidth / 2;
       const headerTop = frontCardY + margin + 0.2;
+      const headerLeftX = frontCardX + margin + 0.05;
 
       pdf.setTextColor(0, 0, 0);
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(6);
-      pdf.text('REPUBLIC OF THE PHILIPPINES', centerX, headerTop, { align: 'center' });
+      pdf.text('REPUBLIC OF THE PHILIPPINES', headerLeftX, headerTop);
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(5);
-      pdf.text(`PROVINCE OF ${provinceValue}`, centerX, headerTop + 0.07, { align: 'center' });
+      pdf.text(`PROVINCE OF ${provinceValue}`, headerLeftX, headerTop + 0.07);
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(6.5);
-      pdf.text(`CITY OF ${cityValue}`, centerX, headerTop + 0.14, { align: 'center' });
+      pdf.text(`CITY OF ${cityValue}`, headerLeftX, headerTop + 0.14);
 
-      // Logo group on the right
-      const logoCenterY = frontCardY + margin + 0.12;
-      const citySealX = frontCardX + cardWidth - margin - 0.18;
-      pdf.setDrawColor(0, 0, 0);
-      pdf.setLineWidth(0.005);
-      pdf.circle(citySealX, logoCenterY, 0.08);
-      pdf.circle(citySealX, logoCenterY, 0.07);
-      pdf.setFontSize(3);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('LUNGSOD', citySealX, logoCenterY - 0.03, { align: 'center' });
-      pdf.text('NG', citySealX, logoCenterY - 0.015, { align: 'center' });
-      pdf.text('CABUYAO', citySealX, logoCenterY, { align: 'center' });
-      pdf.text('2012', citySealX, logoCenterY + 0.015, { align: 'center' });
+      // Logo group on the right - smaller size
+      const topLogoSize = 0.28;
+      const topLogoGap = 0.04;
+      const topLogoY = frontCardY + margin + 0.02;
+      const frontPdaoX = frontCardX + cardWidth - margin - topLogoSize;
+      const frontSealX = frontPdaoX - topLogoGap - topLogoSize;
 
-      const pdaoX = citySealX + 0.18;
-      pdf.setFillColor(0, 56, 168);
-      pdf.circle(pdaoX, logoCenterY, 0.08, 'F');
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(8);
-      pdf.text('♿', pdaoX, logoCenterY + 0.01, { align: 'center' });
-      pdf.setTextColor(0, 0, 0);
+      addLogoImage(logos?.pdao, frontPdaoX, topLogoY, topLogoSize, topLogoSize, () => {
+        const centerXLogo = frontPdaoX + topLogoSize / 2;
+        const centerYLogo = topLogoY + topLogoSize / 2;
+        pdf.setFillColor(0, 56, 168);
+        pdf.circle(centerXLogo, centerYLogo, topLogoSize / 2, 'F');
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(8);
+        pdf.text('♿', centerXLogo, centerYLogo + 0.01, { align: 'center' });
+        pdf.setTextColor(0, 0, 0);
+      });
+
+      addLogoImage(logos?.seal, frontSealX, topLogoY, topLogoSize, topLogoSize, () => {
+        const centerXLogo = frontSealX + topLogoSize / 2;
+        const centerYLogo = topLogoY + topLogoSize / 2;
+        pdf.setDrawColor(0, 0, 0);
+        pdf.setLineWidth(0.005);
+        pdf.circle(centerXLogo, centerYLogo, topLogoSize / 2);
+        pdf.circle(centerXLogo, centerYLogo, topLogoSize / 2 - 0.01);
+        pdf.setFontSize(3);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('LUNGSOD', centerXLogo, centerYLogo - 0.035, { align: 'center' });
+        pdf.text('NG', centerXLogo, centerYLogo - 0.02, { align: 'center' });
+        pdf.text('CABUYAO', centerXLogo, centerYLogo - 0.005, { align: 'center' });
+        pdf.text('2012', centerXLogo, centerYLogo + 0.01, { align: 'center' });
+      });
 
       const contentStartY = headerTop + 0.28;
       const leftColumnX = frontCardX + margin + 0.06;
@@ -699,8 +746,10 @@ function PWDCard() {
       pdf.setFontSize(5.5);
       pdf.text(displayIdNumber, rightCenterX, idTextY + 0.08, { align: 'center' });
 
-      const photoWidth = rightColumnWidth * 0.75;
-      const photoHeight = 0.95;
+      // 2x2 inch photo (square) - slightly smaller
+      const photoSize = Math.min(rightColumnWidth * 0.65, 0.85);
+      const photoWidth = photoSize;
+      const photoHeight = photoSize;
       const photoX = rightColumnX + (rightColumnWidth - photoWidth) / 2;
       const photoY = idTextY + 0.12;
 
@@ -756,29 +805,38 @@ function PWDCard() {
         pdf.text('2x2', photoX + photoWidth / 2, photoY + photoHeight / 2, { align: 'center' });
       }
 
-      // Bottom flag and Bagong text
-      const flagWidthPdf = 0.45;
-      const flagHeightPdf = 0.25;
+      // Bottom flag and Bagong wordmark - ensure they fit within card
+      const flagWidthPdf = 0.38;
+      const flagHeightPdf = 0.23;
       const flagPosX = frontCardX + margin + 0.05;
       const flagPosY = frontCardY + cardHeight - margin - flagHeightPdf - 0.18;
 
-      pdf.setDrawColor(0, 0, 0);
-      pdf.setLineWidth(0.005);
-      pdf.rect(flagPosX, flagPosY, flagWidthPdf, flagHeightPdf);
-      pdf.setFillColor(255, 255, 255);
-      pdf.rect(flagPosX, flagPosY, flagWidthPdf * 0.33, flagHeightPdf, 'F');
-      pdf.setFillColor(0, 56, 168);
-      pdf.rect(flagPosX + flagWidthPdf * 0.33, flagPosY, flagWidthPdf * 0.67, flagHeightPdf / 2, 'F');
-      pdf.setFillColor(206, 17, 38);
-      pdf.rect(flagPosX + flagWidthPdf * 0.33, flagPosY + flagHeightPdf / 2, flagWidthPdf * 0.67, flagHeightPdf / 2, 'F');
-      pdf.setFillColor(252, 209, 22);
-      pdf.circle(flagPosX + flagWidthPdf * 0.2, flagPosY + flagHeightPdf / 2, 0.03, 'F');
+      addLogoImage(logos?.flag, flagPosX, flagPosY, flagWidthPdf, flagHeightPdf, () => {
+        pdf.setDrawColor(0, 0, 0);
+        pdf.setLineWidth(0.005);
+        pdf.rect(flagPosX, flagPosY, flagWidthPdf, flagHeightPdf);
+        pdf.setFillColor(255, 255, 255);
+        pdf.rect(flagPosX, flagPosY, flagWidthPdf * 0.33, flagHeightPdf, 'F');
+        pdf.setFillColor(0, 56, 168);
+        pdf.rect(flagPosX + flagWidthPdf * 0.33, flagPosY, flagWidthPdf * 0.67, flagHeightPdf / 2, 'F');
+        pdf.setFillColor(206, 17, 38);
+        pdf.rect(flagPosX + flagWidthPdf * 0.33, flagPosY + flagHeightPdf / 2, flagWidthPdf * 0.67, flagHeightPdf / 2, 'F');
+        pdf.setFillColor(252, 209, 22);
+        pdf.circle(flagPosX + flagWidthPdf * 0.2, flagPosY + flagHeightPdf / 2, 0.03, 'F');
+      });
 
-      pdf.setFontSize(5.5);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(183, 28, 28);
-      pdf.text('BAGONG CABUYAO', frontCardX + cardWidth - margin - 0.05, flagPosY + flagHeightPdf / 2 + 0.03, { align: 'right' });
-      pdf.setTextColor(0, 0, 0);
+      const bagongWidthPdf = 0.65;
+      const bagongHeightPdf = 0.22;
+      const bagongPosX = frontCardX + cardWidth - margin - bagongWidthPdf - 0.05;
+      const bagongPosY = flagPosY + (flagHeightPdf - bagongHeightPdf) / 2;
+
+      addLogoImage(logos?.bagong, bagongPosX, bagongPosY, bagongWidthPdf, bagongHeightPdf, () => {
+        pdf.setFontSize(5.5);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(183, 28, 28);
+        pdf.text('BAGONG CABUYAO', bagongPosX + bagongWidthPdf, bagongPosY + bagongHeightPdf / 2 + 0.03, { align: 'right' });
+        pdf.setTextColor(0, 0, 0);
+      });
 
       const footerY = frontCardY + cardHeight - margin - 0.05;
       pdf.setFontSize(4.5);
@@ -795,37 +853,51 @@ function PWDCard() {
       pdf.setLineWidth(0.01);
       pdf.rect(backCardX, backCardY, cardWidth, cardHeight);
 
-      // Top right: Logos and BAGONG CABUYAO text (landscape)
-      const topRightX = backCardX + cardWidth - backMargin - 0.28;
+      // Top right logos - smaller size
       const topRightY = backCardY + backMargin + 0.05;
-      
-      // BAGONG CABUYAO text
-      pdf.setFontSize(5.5);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(255, 107, 53); // Orange-red
-      pdf.text('BAGONG CABUYAO', topRightX - 0.15, topRightY, { align: 'right' });
+      const backPdaoSize = 0.24;
+      const backSealSize = 0.26;
+      const bagongWidthBack = 0.7;
+      const bagongHeightBack = 0.22;
+      const backPdaoX = backCardX + cardWidth - backMargin - backPdaoSize;
+      const backSealX = backPdaoX - 0.04 - backSealSize;
+      const bagongX = backSealX - 0.06 - bagongWidthBack;
 
-      // City Seal (back side)
-      const backSealX = topRightX;
-      pdf.setDrawColor(0, 0, 0);
-      pdf.setLineWidth(0.005);
-      pdf.circle(backSealX, topRightY + 0.075, 0.08);
-      pdf.circle(backSealX, topRightY + 0.075, 0.07);
-      pdf.setFontSize(3);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(0, 0, 0);
-      pdf.text('LUNGSOD', backSealX, topRightY + 0.04, { align: 'center' });
-      pdf.text('NG', backSealX, topRightY + 0.055, { align: 'center' });
-      pdf.text('CABUYAO', backSealX, topRightY + 0.07, { align: 'center' });
-      pdf.text('2012', backSealX, topRightY + 0.09, { align: 'center' });
+      addLogoImage(logos?.pdao, backPdaoX, topRightY, backPdaoSize, backPdaoSize, () => {
+        const centerXLogo = backPdaoX + backPdaoSize / 2;
+        const centerYLogo = topRightY + backPdaoSize / 2;
+        pdf.setFillColor(0, 56, 168);
+        pdf.circle(centerXLogo, centerYLogo, backPdaoSize / 2, 'F');
+        pdf.setFillColor(255, 255, 255);
+        pdf.setTextColor(255, 255, 255);
+        pdf.setFontSize(8);
+        pdf.text('♿', centerXLogo, centerYLogo + 0.01, { align: 'center' });
+        pdf.setTextColor(0, 0, 0);
+      });
 
-      // PDAO Logo
-      const pdaoX = backSealX + 0.12;
-      pdf.setFillColor(0, 56, 168);
-      pdf.circle(pdaoX, topRightY + 0.075, 0.08, 'F');
-      pdf.setFillColor(255, 255, 255);
-      pdf.setFontSize(8);
-      pdf.text('♿', pdaoX, topRightY + 0.08, { align: 'center' });
+      addLogoImage(logos?.seal, backSealX, topRightY, backSealSize, backSealSize, () => {
+        const centerXLogo = backSealX + backSealSize / 2;
+        const centerYLogo = topRightY + backSealSize / 2;
+        pdf.setDrawColor(0, 0, 0);
+        pdf.setLineWidth(0.005);
+        pdf.circle(centerXLogo, centerYLogo, backSealSize / 2);
+        pdf.circle(centerXLogo, centerYLogo, backSealSize / 2 - 0.01);
+        pdf.setFontSize(3);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(0, 0, 0);
+        pdf.text('LUNGSOD', centerXLogo, centerYLogo - 0.035, { align: 'center' });
+        pdf.text('NG', centerXLogo, centerYLogo - 0.02, { align: 'center' });
+        pdf.text('CABUYAO', centerXLogo, centerYLogo - 0.005, { align: 'center' });
+        pdf.text('2012', centerXLogo, centerYLogo + 0.01, { align: 'center' });
+      });
+
+      addLogoImage(logos?.bagong, bagongX, topRightY + 0.02, bagongWidthBack, bagongHeightBack, () => {
+        pdf.setFontSize(5.5);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setTextColor(255, 107, 53);
+        pdf.text('BAGONG CABUYAO', bagongX + bagongWidthBack, topRightY + bagongHeightBack / 2 + 0.02, { align: 'left' });
+        pdf.setTextColor(0, 0, 0);
+      });
 
       // Main content: QR Code covers whole left side, details on right (landscape layout)
       const backMainContentY = topRightY + 0.2;
@@ -1676,6 +1748,10 @@ function PWDCard() {
   const displayBloodType = withPlaceholder(bloodTypeValue);
   const displayContact = withPlaceholder(contactValue);
   const displayGuardian = withPlaceholder(guardianValue);
+  const flagLogoUrl = LOGO_URLS.flag;
+  const bagongLogoUrl = LOGO_URLS.bagong;
+  const pdaoLogoUrl = LOGO_URLS.pdao;
+  const sealLogoUrl = LOGO_URLS.seal;
 
   const resolvedPhotoUrl = useMemo(() => {
     if (idPictureUrl) return idPictureUrl;
@@ -2565,20 +2641,38 @@ function PWDCard() {
                     }}
                   >
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <Box sx={{ flex: 1, textAlign: 'center' }}>
+                      <Box sx={{ flex: 1 }}>
                         <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#1f2937', lineHeight: 1.2 }}>
                           REPUBLIC OF THE PHILIPPINES
                         </Typography>
                         <Typography sx={{ fontSize: '0.5rem', fontWeight: 500, color: '#1f2937', lineHeight: 1.2 }}>
                           PROVINCE OF {provinceValue}
                         </Typography>
-                        <Typography sx={{ fontSize: '0.6rem', fontWeight: 800, color: '#0f172a', letterSpacing: '0.05em' }}>
+                        <Typography sx={{ fontSize: '0.62rem', fontWeight: 800, color: '#0f172a', letterSpacing: '0.05em' }}>
                           CITY OF {cityValue}
                         </Typography>
                       </Box>
-                      <Box sx={{ display: 'flex', gap: 1 }}>
-                        <CitySeal size={28} />
-                        <PdaoLogo size={28} />
+                      <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                        <Box
+                          component="img"
+                          src={pdaoLogoUrl}
+                          alt="PDAO logo"
+                          sx={{
+                            width: { xs: 32, sm: 36 },
+                            height: { xs: 32, sm: 36 },
+                            objectFit: 'contain'
+                          }}
+                        />
+                        <Box
+                          component="img"
+                          src={sealLogoUrl}
+                          alt="City of Cabuyao seal"
+                          sx={{
+                            width: { xs: 32, sm: 36 },
+                            height: { xs: 32, sm: 36 },
+                            objectFit: 'contain'
+                          }}
+                        />
                       </Box>
                     </Box>
 
@@ -2646,7 +2740,8 @@ function PWDCard() {
                         </Box>
                         <Box
                           sx={{
-                            flex: 1,
+                            width: '85%',
+                            aspectRatio: '1 / 1',
                             borderRadius: 2,
                             border: '1px solid #1f2937',
                             bgcolor: '#F3F4F6',
@@ -2654,7 +2749,8 @@ function PWDCard() {
                             alignItems: 'center',
                             justifyContent: 'center',
                             overflow: 'hidden',
-                            position: 'relative'
+                            position: 'relative',
+                            mx: 'auto'
                           }}
                         >
                           {renderPhotoPreview()}
@@ -2662,9 +2758,34 @@ function PWDCard() {
                       </Box>
                     </Box>
 
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <FlagIcon width={60} height={36} />
-                      <BagongWordmark fontSize="0.62rem" align="right" />
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, width: '100%' }}>
+                      <Box
+                        component="img"
+                        src={flagLogoUrl}
+                        alt="Philippine flag"
+                        sx={{
+                          maxWidth: '30%',
+                          height: 'auto',
+                          maxHeight: 32,
+                          aspectRatio: '5/3',
+                          borderRadius: '4px',
+                          border: '1px solid #d1d5db',
+                          objectFit: 'cover',
+                          flexShrink: 0
+                        }}
+                      />
+                      <Box
+                        component="img"
+                        src={bagongLogoUrl}
+                        alt="Bagong Cabuyao"
+                        sx={{
+                          maxWidth: '45%',
+                          height: 'auto',
+                          maxHeight: 24,
+                          objectFit: 'contain',
+                          flexShrink: 0
+                        }}
+                      />
                     </Box>
                     <Typography
                       sx={{
@@ -2698,19 +2819,31 @@ function PWDCard() {
                       gap: 1
                     }}
                   >
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 1 }}>
-                      <BagongWordmark fontSize="0.6rem" align="right" />
-                      <CitySeal size={24} />
-                      <PdaoLogo size={24} />
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 0.75 }}>
+                      <Box
+                        component="img"
+                        src={bagongLogoUrl}
+                        alt="Bagong Cabuyao"
+                        sx={{ height: 22, objectFit: 'contain' }}
+                      />
+                      <Box
+                        component="img"
+                        src={sealLogoUrl}
+                        alt="City of Cabuyao seal"
+                        sx={{ width: 24, height: 24, objectFit: 'contain' }}
+                      />
+                      <Box
+                        component="img"
+                        src={pdaoLogoUrl}
+                        alt="PDAO logo"
+                        sx={{ width: 24, height: 24, objectFit: 'contain' }}
+                      />
                     </Box>
 
                     <Box sx={{ flex: 1, display: 'flex', gap: 1.5 }}>
                       <Box
                         sx={{
                           width: '45%',
-                          border: '1px solid #CBD5F5',
-                          borderRadius: 2,
-                          bgcolor: '#F3F4F6',
                           display: 'flex',
                           flexDirection: 'column',
                           alignItems: 'center',

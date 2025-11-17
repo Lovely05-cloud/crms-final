@@ -4,10 +4,29 @@ import toastService from './toastService';
 
 const pwdMemberService = {
   // Get all PWD members
-  async getAll() {
+  async getAll(params = {}) {
     // Use the proper PWD members API endpoint
     try {
-      const response = await api.get('/pwd-members');
+      const query = new URLSearchParams();
+
+      Object.entries(params).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') return;
+
+        if (Array.isArray(value)) {
+          value.forEach((val) => {
+            if (val !== undefined && val !== null && val !== '') {
+              query.append(`${key}[]`, val);
+            }
+          });
+        } else {
+          query.append(key, value);
+        }
+      });
+
+      const queryString = query.toString();
+      const url = queryString ? `/pwd-members?${queryString}` : '/pwd-members';
+
+      const response = await api.get(url);
       return response;
     } catch (error) {
       console.error('Error fetching PWD members:', error);
