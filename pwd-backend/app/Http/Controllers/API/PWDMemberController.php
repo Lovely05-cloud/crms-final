@@ -40,10 +40,31 @@ class PWDMemberController extends Controller
                 'updated_at'
             ])->get();
             
+            // Enhance members with data from approved applications if available
+            $enhancedMembers = $members->map(function ($member) {
+                // Get contact number and emergency contact from approved application as fallback
+                $approvedApplication = \App\Models\Application::where('pwdID', $member->userID)
+                    ->where('status', 'Approved')
+                    ->latest()
+                    ->first();
+                
+                if ($approvedApplication) {
+                    // Use application data as fallback if member data is missing
+                    if (empty($member->contactNumber) && !empty($approvedApplication->contactNumber)) {
+                        $member->contactNumber = $approvedApplication->contactNumber;
+                    }
+                    if (empty($member->emergencyContact) && !empty($approvedApplication->emergencyContact)) {
+                        $member->emergencyContact = $approvedApplication->emergencyContact;
+                    }
+                }
+                
+                return $member;
+            });
+            
             return response()->json([
                 'success' => true,
-                'data' => $members,
-                'count' => $members->count()
+                'data' => $enhancedMembers,
+                'count' => $enhancedMembers->count()
             ]);
         } catch (\Exception $e) {
             return response()->json([

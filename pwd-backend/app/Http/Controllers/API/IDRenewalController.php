@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use App\Models\IDRenewal;
 use App\Models\PWDMember;
 use App\Models\Notification;
+use App\Services\EmailService;
 use Carbon\Carbon;
 
 class IDRenewalController extends Controller
@@ -196,7 +197,7 @@ class IDRenewalController extends Controller
             ], 422);
         }
 
-        $renewal = IDRenewal::with('member')->findOrFail($id);
+        $renewal = IDRenewal::with(['member', 'member.user'])->findOrFail($id);
 
         if ($renewal->status !== 'pending') {
             return response()->json([
@@ -236,6 +237,34 @@ class IDRenewalController extends Controller
                     'new_expiration_date' => $newExpirationDate->toDateString()
                 ]
             ]);
+
+            // Send email notification to the member
+            try {
+                // Get member's email (try from member first, then from user relationship)
+                $memberEmail = $member->email;
+                if (empty($memberEmail) && $member->user) {
+                    $memberEmail = $member->user->email;
+                }
+
+                if (!empty($memberEmail)) {
+                    $emailService = new EmailService();
+                    $emailService->sendRenewalApprovalEmail([
+                        'email' => $memberEmail,
+                        'firstName' => $member->firstName,
+                        'lastName' => $member->lastName,
+                        'pwdId' => $member->pwd_id ?? 'N/A',
+                        'newExpirationDate' => $newExpirationDate->format('F d, Y'),
+                        'renewalDate' => now()->format('F d, Y'),
+                        'notes' => $request->notes ?? ''
+                    ]);
+                }
+            } catch (\Exception $emailException) {
+                // Log email error but don't fail the approval
+                \Illuminate\Support\Facades\Log::warning('Failed to send renewal approval email', [
+                    'member_id' => $member->id,
+                    'error' => $emailException->getMessage()
+                ]);
+            }
 
             DB::commit();
 

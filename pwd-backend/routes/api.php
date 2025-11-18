@@ -887,6 +887,7 @@ Route::post('/benefit-claims', [BenefitClaimController::class, 'store']);
 Route::patch('/benefit-claims/{id}/status', [BenefitClaimController::class, 'updateStatus']);
 Route::get('/benefit-claims/{id}/treasury-letter', [BenefitClaimController::class, 'downloadTreasuryLetter']);
 Route::post('/benefit-claims/{id}/upload-signed-letter', [BenefitClaimController::class, 'uploadSignedLetter']);
+Route::get('/benefit-claims/{id}/signed-letter', [BenefitClaimController::class, 'viewSignedLetter']);
 
 // QR scan claim benefits route
 Route::post('/qr-scan/claim-benefits', [BenefitClaimController::class, 'claimBenefits']);
@@ -2162,6 +2163,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('benefit-claims/{id}/status', [BenefitClaimController::class, 'updateStatus']);
     Route::get('benefit-claims/{id}/treasury-letter', [BenefitClaimController::class, 'downloadTreasuryLetter']);
     Route::post('benefit-claims/{id}/upload-signed-letter', [BenefitClaimController::class, 'uploadSignedLetter']);
+    Route::get('benefit-claims/{id}/signed-letter', [BenefitClaimController::class, 'viewSignedLetter']);
     
     // Announcement routes (protected - for admin operations)
     Route::post('/announcements', [AnnouncementController::class, 'store']);
@@ -2572,6 +2574,151 @@ Route::get('/api/test-richard-pwd1', function () {
         return response()->json([
             'success' => false,
             'message' => 'Error checking Richard Carandang',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+});
+
+// Test route to update Mel Ivan Mananquil's card expiration date to 25 days from now
+Route::get('/api/test-update-mel-ivan-expiry', function () {
+    try {
+        // Find Mel Ivan Mananquil
+        $member = \App\Models\PWDMember::where(function($query) {
+            $query->where('firstName', 'LIKE', '%Mel%')
+                  ->where('lastName', 'LIKE', '%Mananquil%');
+        })->orWhere(function($query) {
+            $query->where('firstName', 'LIKE', '%Mel Ivan%')
+                  ->where('lastName', 'LIKE', '%Mananquil%');
+        })->first();
+        
+        if (!$member) {
+            // Try with different name variations
+            $member = \App\Models\PWDMember::where('firstName', 'Mel Ivan')
+                ->where('lastName', 'Mananquil')
+                ->first();
+        }
+        
+        if (!$member) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Mel Ivan Mananquil not found in PWD members'
+            ], 404);
+        }
+        
+        // Set expiration date to 25 days from now (within 30-day window for testing)
+        $newExpirationDate = now()->addDays(25);
+        
+        // Update the member
+        $member->update([
+            'cardExpirationDate' => $newExpirationDate,
+            'cardClaimed' => true, // Ensure card is claimed
+            'cardIssueDate' => $member->cardIssueDate ?? now()->subYears(3)->addDays(25) // Set issue date if not set
+        ]);
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Mel Ivan Mananquil\'s card expiration date updated successfully',
+            'member' => [
+                'id' => $member->id,
+                'userID' => $member->userID,
+                'pwd_id' => $member->pwd_id,
+                'firstName' => $member->firstName,
+                'lastName' => $member->lastName,
+                'cardClaimed' => $member->cardClaimed,
+                'cardIssueDate' => $member->cardIssueDate,
+                'cardExpirationDate' => $member->cardExpirationDate,
+                'daysUntilExpiration' => now()->diffInDays($member->cardExpirationDate, false)
+            ]
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Error updating Mel Ivan Mananquil\'s expiration date',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+});
+
+// Test route to send renewal approval email to Mel Ivan Mananquil
+Route::get('/api/test-send-mel-ivan-renewal-email', function () {
+    try {
+        // Find Mel Ivan Mananquil
+        $member = \App\Models\PWDMember::where(function($query) {
+            $query->where('firstName', 'LIKE', '%Mel%')
+                  ->where('lastName', 'LIKE', '%Mananquil%');
+        })->orWhere(function($query) {
+            $query->where('firstName', 'LIKE', '%Mel Ivan%')
+                  ->where('lastName', 'LIKE', '%Mananquil%');
+        })->with('user')->first();
+        
+        if (!$member) {
+            // Try with different name variations
+            $member = \App\Models\PWDMember::where('firstName', 'Mel Ivan')
+                ->where('lastName', 'Mananquil')
+                ->with('user')
+                ->first();
+        }
+        
+        if (!$member) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Mel Ivan Mananquil not found in PWD members'
+            ], 404);
+        }
+        
+        // Get member's email
+        $memberEmail = $member->email;
+        if (empty($memberEmail) && $member->user) {
+            $memberEmail = $member->user->email;
+        }
+        
+        if (empty($memberEmail)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No email address found for Mel Ivan Mananquil'
+            ], 400);
+        }
+        
+        // Get expiration date (use current if not set, or add 3 years)
+        $expirationDate = $member->cardExpirationDate 
+            ? \Carbon\Carbon::parse($member->cardExpirationDate)
+            : now()->addYears(3);
+        
+        // Send renewal approval email
+        $emailService = new \App\Services\EmailService();
+        $emailSent = $emailService->sendRenewalApprovalEmail([
+            'email' => $memberEmail,
+            'firstName' => $member->firstName,
+            'lastName' => $member->lastName,
+            'pwdId' => $member->pwd_id ?? 'N/A',
+            'newExpirationDate' => $expirationDate->format('F d, Y'),
+            'renewalDate' => now()->format('F d, Y'),
+            'notes' => 'This is a test email for renewal approval.'
+        ]);
+        
+        if ($emailSent) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Renewal approval email sent successfully to Mel Ivan Mananquil',
+                'details' => [
+                    'email' => $memberEmail,
+                    'name' => $member->firstName . ' ' . $member->lastName,
+                    'pwdId' => $member->pwd_id ?? 'N/A',
+                    'expirationDate' => $expirationDate->format('F d, Y')
+                ]
+            ]);
+        } else {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to send renewal approval email. Check logs for details.',
+                'email' => $memberEmail
+            ], 500);
+        }
+        
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Error sending renewal approval email',
             'error' => $e->getMessage()
         ], 500);
     }

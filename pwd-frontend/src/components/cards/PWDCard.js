@@ -31,7 +31,9 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Tabs,
+  Tab
 } from '@mui/material';
 import {
   CreditCard as CreditCardIcon,
@@ -44,7 +46,12 @@ import {
   FilterList as FilterListIcon,
   Clear as ClearIcon,
   ArrowUpward as ArrowUpwardIcon,
-  ArrowDownward as ArrowDownwardIcon
+  ArrowDownward as ArrowDownwardIcon,
+  Warning as WarningIcon,
+  CheckCircle as CheckCircleIcon,
+  Cancel as CancelIcon,
+  Visibility as VisibilityIcon,
+  Close as CloseIcon
 } from '@mui/icons-material';
 import { Pagination } from '@mui/material';
 import AdminSidebar from '../shared/AdminSidebar';
@@ -56,6 +63,8 @@ import QRCodeService from '../../services/qrCodeService';
 import SuccessModal from '../shared/SuccessModal';
 import { useModal } from '../../hooks/useModal';
 import { jsPDF } from 'jspdf';
+import { API_CONFIG } from '../../config/production';
+import toastService from '../../services/toastService';
 
 const PLACEHOLDER_LINE = '________________';
 const HTML_ESCAPE_LOOKUP = {
@@ -169,6 +178,7 @@ function PWDCard() {
   const [pwdMembers, setPwdMembers] = useState([]);
   const [selectedMember, setSelectedMember] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [error, setError] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
   const [qrCodeDataURL, setQrCodeDataURL] = useState('');
@@ -244,6 +254,21 @@ function PWDCard() {
   const [renewConfirmOpen, setRenewConfirmOpen] = useState(false);
   const [pendingMember, setPendingMember] = useState(null);
 
+  // Tab state
+  const [activeTab, setActiveTab] = useState(0);
+
+  // Renewals state
+  const [renewals, setRenewals] = useState([]);
+  const [loadingRenewals, setLoadingRenewals] = useState(false);
+  const [renewalStatusFilter, setRenewalStatusFilter] = useState('all');
+  const [selectedRenewal, setSelectedRenewal] = useState(null);
+  const [viewRenewalDialogOpen, setViewRenewalDialogOpen] = useState(false);
+  const [viewingRenewalFile, setViewingRenewalFile] = useState(null);
+  const [processingRenewal, setProcessingRenewal] = useState(null);
+  const [approveDialogOpen, setApproveDialogOpen] = useState(false);
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [renewalNotes, setRenewalNotes] = useState('');
+
   // Calculate card status based on claimed status and expiration date
   const calculateCardStatus = (cardClaimed, cardExpirationDate) => {
     // If card is not claimed, return "to claim"
@@ -295,9 +320,12 @@ function PWDCard() {
   }, [selectedMember]);
 
   // Fetch PWD members from API with pagination and filters
-  const fetchPwdMembers = async (page = currentPage) => {
+  const fetchPwdMembers = async (page = currentPage, showLoading = false) => {
     try {
-      setLoading(true);
+      // Only show loading animation on initial load or when explicitly requested
+      if (showLoading || isInitialLoad) {
+        setLoading(true);
+      }
       setError(null);
       
       // Build API parameters
@@ -372,7 +400,8 @@ function PWDCard() {
           middleName: member.middleName,
           suffix: member.suffix,
           address: member.address,
-          contactNumber: member.contactNumber || member.phone,
+          contactNumber: member.contactNumber || member.contact_number || member.phone || member.phoneNumber || '',
+          emergencyContact: member.emergencyContact || member.emergency_contact || member.guardianName || member.guardian_name || '',
           gender: member.gender || member.sex,
           bloodType: member.bloodType,
           idPictures: member.idPictures, // Add ID pictures to the transformation
@@ -417,13 +446,17 @@ function PWDCard() {
       
       setError('Failed to fetch PWD members. Please try again.');
     } finally {
-      setLoading(false);
+      if (showLoading || isInitialLoad) {
+        setLoading(false);
+        setIsInitialLoad(false);
+      }
     }
   };
 
   // Load PWD members when page or filters change
   useEffect(() => {
-    fetchPwdMembers(currentPage);
+    // Don't show loading animation for search/filter changes, only for initial load
+    fetchPwdMembers(currentPage, false);
   }, [currentPage, debouncedSearch, filters.barangay, filters.disability, filters.status]);
 
   // Fetch ID picture from member documents when member is selected
@@ -1069,7 +1102,7 @@ function PWDCard() {
         });
         
         // Refresh the members list to update card status
-        await fetchPwdMembers();
+        await fetchPwdMembers(currentPage, false);
       } else {
         throw new Error(response?.message || 'Failed to claim card');
       }
@@ -1126,7 +1159,7 @@ function PWDCard() {
         });
         
         // Refresh the members list to update card status
-        await fetchPwdMembers();
+        await fetchPwdMembers(currentPage, false);
       } else {
         throw new Error(response.data?.message || 'Failed to renew card');
       }
@@ -1152,6 +1185,128 @@ function PWDCard() {
   const handleRenewCancel = () => {
     setRenewConfirmOpen(false);
     setPendingMember(null);
+  };
+
+  // Load renewals
+  useEffect(() => {
+    if (activeTab === 1) {
+      loadRenewals();
+    }
+  }, [activeTab, renewalStatusFilter]);
+
+  const loadRenewals = async () => {
+    try {
+      setLoadingRenewals(true);
+      const status = renewalStatusFilter === 'all' ? '' : renewalStatusFilter;
+      const response = await api.get(`/id-renewals${status ? `?status=${status}` : ''}`);
+      
+      if (response?.success) {
+        setRenewals(response.renewals || []);
+      }
+    } catch (err) {
+      console.error('Error loading renewals:', err);
+    } finally {
+      setLoadingRenewals(false);
+    }
+  };
+
+  const handleViewRenewalFile = async (renewalId, type) => {
+    try {
+      const apiBaseUrl = API_CONFIG?.API_BASE_URL || 'http://localhost:8000/api';
+      let token = null;
+      
+      try {
+        const raw = localStorage.getItem('auth.token');
+        token = raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        console.warn('Error parsing auth token:', e);
+      }
+
+      const response = await fetch(`${apiBaseUrl}/id-renewals/${renewalId}/file/${type}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Accept': '*/*',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to load file');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      setViewingRenewalFile(url);
+      setViewRenewalDialogOpen(true);
+    } catch (err) {
+      console.error('Error viewing file:', err);
+      toastService.error('Failed to load file');
+    }
+  };
+
+  const handleCloseViewRenewalDialog = () => {
+    setViewRenewalDialogOpen(false);
+    if (viewingRenewalFile) {
+      window.URL.revokeObjectURL(viewingRenewalFile);
+      setViewingRenewalFile(null);
+    }
+  };
+
+  const handleApproveRenewal = async () => {
+    if (!selectedRenewal) return;
+
+    try {
+      setProcessingRenewal(selectedRenewal.id);
+      await api.post(`/id-renewals/${selectedRenewal.id}/approve`, {
+        notes: renewalNotes
+      });
+      toastService.success('Renewal approved successfully');
+      setApproveDialogOpen(false);
+      setSelectedRenewal(null);
+      setRenewalNotes('');
+      loadRenewals();
+    } catch (err) {
+      console.error('Error approving renewal:', err);
+      toastService.error('Failed to approve renewal');
+    } finally {
+      setProcessingRenewal(null);
+    }
+  };
+
+  const handleRejectRenewal = async () => {
+    if (!selectedRenewal || !renewalNotes.trim()) {
+      toastService.error('Please provide a rejection reason');
+      return;
+    }
+
+    try {
+      setProcessingRenewal(selectedRenewal.id);
+      await api.post(`/id-renewals/${selectedRenewal.id}/reject`, {
+        notes: renewalNotes
+      });
+      toastService.success('Renewal rejected');
+      setRejectDialogOpen(false);
+      setSelectedRenewal(null);
+      setRenewalNotes('');
+      loadRenewals();
+    } catch (err) {
+      console.error('Error rejecting renewal:', err);
+      toastService.error('Failed to reject renewal');
+    } finally {
+      setProcessingRenewal(null);
+    }
+  };
+
+  const openApproveDialog = (renewal) => {
+    setSelectedRenewal(renewal);
+    setRenewalNotes('');
+    setApproveDialogOpen(true);
+  };
+
+  const openRejectDialog = (renewal) => {
+    setSelectedRenewal(renewal);
+    setRenewalNotes('');
+    setRejectDialogOpen(true);
   };
 
   const handlePrintCard = async () => {
@@ -1729,12 +1884,12 @@ function PWDCard() {
   const disabilityValue = selectedMemberData?.disabilityType || selectedMemberData?.typeOfDisability || '';
   const idNumberValue = getMemberIdNumber(selectedMemberData);
   const addressValue = getMemberAddressLine(selectedMemberData);
-  const dobValue = formatCardDate(selectedMemberData?.dateOfBirth);
+  const dobValue = formatCardDate(selectedMemberData?.birthDate || selectedMemberData?.dateOfBirth);
   const dateIssuedValue = formatCardDate(selectedMemberData?.cardIssueDate);
   const genderValue = selectedMemberData?.gender || '';
   const bloodTypeValue = selectedMemberData?.bloodType || '';
   const contactValue = selectedMemberData?.contactNumber || '';
-  const guardianValue = selectedMemberData?.guardianName || '';
+  const guardianValue = selectedMemberData?.emergencyContact || selectedMemberData?.guardianName || '';
   const provinceValue = (selectedMemberData?.province || 'Laguna').toUpperCase();
   const cityValue = (selectedMemberData?.cityMunicipality || selectedMemberData?.city || 'Cabuyao').toUpperCase();
 
@@ -1845,7 +2000,7 @@ function PWDCard() {
               <Button 
                 color="inherit" 
                 size="small" 
-                onClick={fetchPwdMembers}
+                onClick={() => fetchPwdMembers(currentPage, true)}
                 sx={{ fontWeight: 'bold' }}
               >
                 Retry
@@ -1883,7 +2038,7 @@ function PWDCard() {
             </Typography>
             <Button
               variant="contained"
-              onClick={fetchPwdMembers}
+              onClick={() => fetchPwdMembers(currentPage, true)}
               sx={{ 
                 bgcolor: '#0b87ac', 
                 '&:hover': { bgcolor: '#0a6b8a' },
@@ -1926,6 +2081,41 @@ function PWDCard() {
             </Typography>
           </Box>
 
+          {/* Tabs */}
+          <Paper sx={{ mb: 3, borderRadius: 2, boxShadow: 2 }}>
+            <Tabs 
+              value={activeTab} 
+              onChange={(e, newValue) => setActiveTab(newValue)}
+              sx={{ 
+                borderBottom: 1, 
+                borderColor: 'divider',
+                '& .MuiTab-root': {
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  fontSize: '0.95rem',
+                  minHeight: 64
+                },
+                '& .Mui-selected': {
+                  color: '#0b87ac'
+                }
+              }}
+              indicatorColor="primary"
+              textColor="primary"
+            >
+              <Tab label="PWD Masterlist" />
+              <Tab 
+                label={
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <WarningIcon sx={{ fontSize: 20 }} />
+                    <span>Renewals {renewals.filter(r => r.status === 'pending').length > 0 && `(${renewals.filter(r => r.status === 'pending').length})`}</span>
+                  </Box>
+                } 
+              />
+            </Tabs>
+          </Paper>
+
+          {/* Tab Content */}
+          {activeTab === 0 && (
           <Grid container spacing={3}>
             {/* Left Panel - PWD Masterlist */}
             <Grid item xs={12} md={8}>
@@ -2000,7 +2190,7 @@ function PWDCard() {
                       >
                         <FilterListIcon />
                       </IconButton>
-                      <IconButton sx={{ color: 'white' }} onClick={() => fetchPwdMembers(currentPage)}>
+                      <IconButton sx={{ color: 'white' }} onClick={() => fetchPwdMembers(currentPage, false)}>
                         <RefreshIcon />
                       </IconButton>
                       <Button
@@ -3165,8 +3355,282 @@ function PWDCard() {
 
             </Grid>
           </Grid>
+          )}
+
+          {/* Renewals Tab */}
+          {activeTab === 1 && (
+            <Paper sx={{ p: 3, borderRadius: 2, boxShadow: 2 }}>
+              <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="h6" sx={{ fontWeight: 700, color: '#2C3E50' }}>
+                  ID Renewal Requests
+                </Typography>
+                <FormControl size="small" sx={{ minWidth: 150 }}>
+                  <InputLabel>Filter by Status</InputLabel>
+                  <Select
+                    value={renewalStatusFilter}
+                    label="Filter by Status"
+                    onChange={(e) => setRenewalStatusFilter(e.target.value)}
+                  >
+                    <MenuItem value="all">All</MenuItem>
+                    <MenuItem value="pending">Pending</MenuItem>
+                    <MenuItem value="approved">Approved</MenuItem>
+                    <MenuItem value="rejected">Rejected</MenuItem>
+                  </Select>
+                </FormControl>
+              </Box>
+
+              {loadingRenewals ? (
+                <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                  <CircularProgress size={40} />
+                </Box>
+              ) : renewals.length === 0 ? (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  No renewal requests found.
+                </Alert>
+              ) : (
+                <TableContainer>
+                  <Table>
+                    <TableHead>
+                      <TableRow sx={{ bgcolor: '#0b87ac' }}>
+                        <TableCell sx={{ color: 'white', fontWeight: 700 }}>Date</TableCell>
+                        <TableCell sx={{ color: 'white', fontWeight: 700 }}>Member</TableCell>
+                        <TableCell sx={{ color: 'white', fontWeight: 700 }}>Status</TableCell>
+                        <TableCell sx={{ color: 'white', fontWeight: 700 }}>Documents</TableCell>
+                        <TableCell sx={{ color: 'white', fontWeight: 700 }}>Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {renewals.map((renewal) => (
+                        <TableRow key={renewal.id} hover>
+                          <TableCell>
+                            {renewal.submitted_at ? new Date(renewal.submitted_at).toLocaleDateString() : 'N/A'}
+                          </TableCell>
+                          <TableCell>
+                            {renewal.member ? (
+                              `${renewal.member.firstName || ''} ${renewal.member.lastName || ''}`.trim() || 'N/A'
+                            ) : (
+                              `Member ID: ${renewal.member_id || 'N/A'}`
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={renewal.status === 'pending' ? 'Pending' : renewal.status === 'approved' ? 'Approved' : 'Rejected'}
+                              color={
+                                renewal.status === 'approved' ? 'success' :
+                                renewal.status === 'rejected' ? 'error' :
+                                'warning'
+                              }
+                              size="small"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<VisibilityIcon />}
+                                onClick={() => handleViewRenewalFile(renewal.id, 'old_card')}
+                              >
+                                Old Card
+                              </Button>
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                startIcon={<VisibilityIcon />}
+                                onClick={() => handleViewRenewalFile(renewal.id, 'medical_certificate')}
+                              >
+                                Medical Cert
+                              </Button>
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            {renewal.status === 'pending' && (
+                              <Box sx={{ display: 'flex', gap: 1 }}>
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  color="success"
+                                  startIcon={<CheckCircleIcon />}
+                                  onClick={() => openApproveDialog(renewal)}
+                                  disabled={processingRenewal === renewal.id}
+                                >
+                                  {processingRenewal === renewal.id ? 'Processing...' : 'Approve'}
+                                </Button>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  color="error"
+                                  startIcon={<CancelIcon />}
+                                  onClick={() => openRejectDialog(renewal)}
+                                  disabled={processingRenewal === renewal.id}
+                                >
+                                  Reject
+                                </Button>
+                              </Box>
+                            )}
+                            {renewal.status === 'approved' && (
+                              <Chip label="Approved" color="success" size="small" />
+                            )}
+                            {renewal.status === 'rejected' && (
+                              <Chip label="Rejected" color="error" size="small" />
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Paper>
+          )}
         </Container>
       </Box>
+
+      {/* View Renewal File Dialog */}
+      <Dialog
+        open={viewRenewalDialogOpen}
+        onClose={handleCloseViewRenewalDialog}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6">View Document</Typography>
+          <IconButton onClick={handleCloseViewRenewalDialog}>
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          {viewingRenewalFile && (
+            <Box sx={{ textAlign: 'center' }}>
+              <img
+                src={viewingRenewalFile}
+                alt="Document"
+                style={{
+                  maxWidth: '100%',
+                  height: 'auto',
+                  borderRadius: 4
+                }}
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseViewRenewalDialog}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Approve Renewal Dialog */}
+      <Dialog
+        open={approveDialogOpen}
+        onClose={() => {
+          setApproveDialogOpen(false);
+          setSelectedRenewal(null);
+          setRenewalNotes('');
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ bgcolor: '#27AE60', color: '#FFFFFF', fontWeight: 'bold' }}>
+          Approve Renewal Request
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <Typography variant="body1" sx={{ mb: 2 }}>
+            Are you sure you want to approve this renewal request?
+          </Typography>
+          {selectedRenewal?.member && (
+            <Typography variant="body2" sx={{ mb: 2, color: '#7F8C8D' }}>
+              Member: {selectedRenewal.member.firstName} {selectedRenewal.member.lastName}
+            </Typography>
+          )}
+          <TextField
+            fullWidth
+            multiline
+            rows={3}
+            label="Notes (Optional)"
+            value={renewalNotes}
+            onChange={(e) => setRenewalNotes(e.target.value)}
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={() => {
+              setApproveDialogOpen(false);
+              setSelectedRenewal(null);
+              setRenewalNotes('');
+            }}
+            variant="outlined"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleApproveRenewal}
+            variant="contained"
+            color="success"
+            disabled={processingRenewal === selectedRenewal?.id}
+          >
+            {processingRenewal === selectedRenewal?.id ? 'Processing...' : 'Approve'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Reject Renewal Dialog */}
+      <Dialog
+        open={rejectDialogOpen}
+        onClose={() => {
+          setRejectDialogOpen(false);
+          setSelectedRenewal(null);
+          setRenewalNotes('');
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ bgcolor: '#E74C3C', color: '#FFFFFF', fontWeight: 'bold' }}>
+          Reject Renewal Request
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          <Typography variant="body1" sx={{ mb: 2 }}>
+            Are you sure you want to reject this renewal request?
+          </Typography>
+          {selectedRenewal?.member && (
+            <Typography variant="body2" sx={{ mb: 2, color: '#7F8C8D' }}>
+              Member: {selectedRenewal.member.firstName} {selectedRenewal.member.lastName}
+            </Typography>
+          )}
+          <TextField
+            fullWidth
+            multiline
+            rows={3}
+            label="Rejection Reason *"
+            value={renewalNotes}
+            onChange={(e) => setRenewalNotes(e.target.value)}
+            required
+            sx={{ mt: 2 }}
+            error={!renewalNotes.trim()}
+            helperText={!renewalNotes.trim() ? 'Please provide a rejection reason' : ''}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={() => {
+              setRejectDialogOpen(false);
+              setSelectedRenewal(null);
+              setRenewalNotes('');
+            }}
+            variant="outlined"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleRejectRenewal}
+            variant="contained"
+            color="error"
+            disabled={processingRenewal === selectedRenewal?.id || !renewalNotes.trim()}
+          >
+            {processingRenewal === selectedRenewal?.id ? 'Processing...' : 'Reject'}
+          </Button>
+        </DialogActions>
+      </Dialog>
       
       {/* Success Modal */}
       <SuccessModal

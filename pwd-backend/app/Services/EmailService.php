@@ -406,6 +406,162 @@ class EmailService
     }
 
     /**
+     * Send PWD card expiration notification email
+     *
+     * @param array $data
+     * @return bool
+     */
+    public function sendCardExpirationEmail($data)
+    {
+        $emailData = [
+            'firstName' => $data['firstName'],
+            'lastName' => $data['lastName'],
+            'pwdId' => $data['pwdId'],
+            'expirationDate' => $data['expirationDate'],
+            'daysUntilExpiration' => $data['daysUntilExpiration'] ?? 30,
+            'renewalUrl' => $data['renewalUrl'] ?? config('app.frontend_url', 'http://localhost:3000') . '/renewal',
+            'loginUrl' => $data['loginUrl'] ?? config('app.frontend_url', 'http://localhost:3000') . '/login',
+        ];
+
+        $subject = 'Important: Your PWD ID Card Expires in 30 Days';
+        $to = $data['email'];
+
+        Log::info('Attempting to send card expiration email', [
+            'to' => $to,
+            'pwdId' => $data['pwdId'],
+            'expirationDate' => $data['expirationDate']
+        ]);
+
+        // Try SMTP first
+        try {
+            Mail::send('emails.card-expiration-notice', $emailData, function ($message) use ($to, $subject) {
+                $message->to($to)
+                       ->subject($subject)
+                       ->from('sarinonhoelivan29@gmail.com', 'Cabuyao PDAO RMS');
+            });
+
+            Log::info('Card expiration email sent via SMTP', [
+                'to' => $to,
+                'pwdId' => $data['pwdId']
+            ]);
+
+            return true;
+
+        } catch (\Exception $e) {
+            Log::error('SMTP failed for expiration email, trying Gmail API', [
+                'error' => $e->getMessage(),
+                'to' => $to,
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+
+        // Fallback to Gmail API if SMTP fails
+        if ($this->gmailService && $this->gmailService->isConfigured()) {
+            try {
+                $htmlBody = View::make('emails.card-expiration-notice', $emailData)->render();
+                
+                if ($this->gmailService->sendEmail($to, $subject, $htmlBody)) {
+                    Log::info('Card expiration email sent via Gmail API', [
+                        'to' => $to,
+                        'pwdId' => $data['pwdId']
+                    ]);
+                    return true;
+                }
+            } catch (\Exception $e) {
+                Log::error('Gmail API failed for expiration email', [
+                    'error' => $e->getMessage(),
+                    'to' => $to
+                ]);
+            }
+        }
+
+        Log::error('Failed to send card expiration email via both SMTP and Gmail API', [
+            'to' => $to,
+            'pwdId' => $data['pwdId']
+        ]);
+
+        return false;
+    }
+
+    /**
+     * Send ID renewal approval email
+     *
+     * @param array $data
+     * @return bool
+     */
+    public function sendRenewalApprovalEmail($data)
+    {
+        $emailData = [
+            'firstName' => $data['firstName'],
+            'lastName' => $data['lastName'],
+            'pwdId' => $data['pwdId'],
+            'newExpirationDate' => $data['newExpirationDate'],
+            'renewalDate' => $data['renewalDate'] ?? now()->format('F d, Y'),
+            'notes' => $data['notes'] ?? '',
+            'loginUrl' => $data['loginUrl'] ?? config('app.frontend_url', 'http://localhost:3000') . '/login'
+        ];
+
+        $subject = 'PWD ID Card Renewal Approved';
+        $to = $data['email'];
+
+        Log::info('Attempting to send renewal approval email', [
+            'to' => $to,
+            'pwdId' => $data['pwdId'],
+            'newExpirationDate' => $data['newExpirationDate']
+        ]);
+
+        // Try SMTP first
+        try {
+            Mail::send('emails.renewal-approved', $emailData, function ($message) use ($to, $subject) {
+                $message->to($to)
+                       ->subject($subject)
+                       ->from('sarinonhoelivan29@gmail.com', 'Cabuyao PDAO RMS');
+            });
+
+            Log::info('Renewal approval email sent via SMTP', [
+                'to' => $to,
+                'pwdId' => $data['pwdId']
+            ]);
+
+            return true;
+
+        } catch (\Exception $e) {
+            Log::error('SMTP failed for renewal approval email, trying Gmail API', [
+                'error' => $e->getMessage(),
+                'to' => $to,
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+
+        // Fallback to Gmail API if SMTP fails
+        if ($this->gmailService && $this->gmailService->isConfigured()) {
+            try {
+                $htmlBody = View::make('emails.renewal-approved', $emailData)->render();
+                
+                if ($this->gmailService->sendEmail($to, $subject, $htmlBody)) {
+                    Log::info('Renewal approval email sent via Gmail API', [
+                        'to' => $to,
+                        'pwdId' => $data['pwdId']
+                    ]);
+                    return true;
+                }
+            } catch (\Exception $e) {
+                Log::error('Gmail API failed for renewal approval email', [
+                    'error' => $e->getMessage(),
+                    'to' => $to
+                ]);
+            }
+        }
+
+        Log::error('Failed to send renewal approval email via both SMTP and Gmail API', [
+            'to' => $to,
+            'pwdId' => $data['pwdId']
+        ]);
+
+        return false;
+    }
+
+    /**
      * Get Gmail service instance for OAuth operations
      *
      * @return GmailService
