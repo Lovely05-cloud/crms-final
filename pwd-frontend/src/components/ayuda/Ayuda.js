@@ -426,27 +426,25 @@ const Ayuda = () => {
       // Build announcement content
       let announcementContent = `${benefit.description || 'A new benefit program is now available for claiming.'}\n\n`;
       announcementContent += `Benefit Type: ${benefit.type}\n`;
-      announcementContent += `Amount: ${benefit.amount}\n\n`;
+      announcementContent += `Amount: ${benefit.amount}\n`;
       
       // Add eligibility criteria
       if (benefit.type === 'Financial Assistance' && benefit.selectedBarangays && benefit.selectedBarangays.length > 0) {
-        announcementContent += `Eligibility: This benefit is available for PWD members from the following barangays: ${benefit.selectedBarangays.join(', ')}.\n\n`;
+        announcementContent += `Benefit is available for PWD members from the following barangays: ${benefit.selectedBarangays.join(', ')}.\n\n`;
       } else if (benefit.type === 'Birthday Cash Gift' && benefit.birthdayMonth) {
         const quarterName = getQuarterName(benefit.birthdayMonth);
-        announcementContent += `Eligibility: This benefit is available for PWD members with birthdays in ${quarterName}.\n`;
+        announcementContent += `Benefit is available for PWD members with birthdays ${quarterName}.\n\n`;
         if (benefit.selectedBarangays && benefit.selectedBarangays.length > 0) {
-          announcementContent += `Additionally, members must be from the following barangays: ${benefit.selectedBarangays.join(', ')}.\n\n`;
-        } else {
-          announcementContent += '\n';
+          announcementContent += `Additionally, members must be from the following barangays: ${benefit.selectedBarangays.join(', ')}.\n`;
         }
       } else if (benefit.barangay && benefit.barangay !== 'All Barangays') {
-        announcementContent += `Eligibility: This benefit is available for PWD members from ${benefit.barangay}.\n\n`;
+        announcementContent += `Benefit is available for PWD members from ${benefit.barangay}.\n\n`;
       } else {
-        announcementContent += `Eligibility: This benefit is available for all eligible PWD members.\n\n`;
+        announcementContent += `Benefit is available for all eligible PWD members.\n\n`;
       }
 
-      announcementContent += `Available for claiming from ${formatDateMMDDYYYY(distributionDate)} to ${expiryDate ? formatDateMMDDYYYY(expiryDate) : 'until further notice'}.\n\n`;
-      announcementContent += `Please visit the PDAO office or use the QR code scanning feature to claim your benefit.`;
+      announcementContent += `Available for claiming from ${formatDateMMDDYYYY(distributionDate)} to ${expiryDate ? formatDateMMDDYYYY(expiryDate) : 'until further notice'}.\n`;
+      announcementContent += `Venue: TBA`;
 
       // Determine target audience and create announcements
       const announcementsToCreate = [];
@@ -1065,13 +1063,13 @@ const Ayuda = () => {
     return months[monthNumber - 1] || 'Unknown';
   };
 
-  // Get quarter name from quarter code
+  // Get quarter name from quarter code (returns just months without Q prefix)
   const getQuarterName = (quarter) => {
     const quarterNames = {
-      'Q1': 'Q1 - January, February, March',
-      'Q2': 'Q2 - April, May, June',
-      'Q3': 'Q3 - July, August, September',
-      'Q4': 'Q4 - October, November, December'
+      'Q1': 'January, February, March',
+      'Q2': 'April, May, June',
+      'Q3': 'July, August, September',
+      'Q4': 'October, November, December'
     };
     return quarterNames[quarter] || quarter;
   };

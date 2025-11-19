@@ -28,6 +28,7 @@ import { useTranslation } from '../../contexts/TranslationContext';
 import { api } from '../../services/api';
 import { supportService } from '../../services/supportService';
 import toastService from '../../services/toastService';
+import MemberNotificationBell from './MemberNotificationBell';
 
 function PWDMemberSidebar({ isOpen, onToggle }) {
   const navigate = useNavigate();
@@ -129,20 +130,23 @@ function PWDMemberSidebar({ isOpen, onToggle }) {
             </Typography>
           </Box>
         </Box>
-        {isMobile && (
-          <IconButton
-            onClick={handleDrawerToggle}
-            sx={{ 
-              color: '#566573',
-              '&:hover': {
-                backgroundColor: '#E8F0FE',
-                color: '#0b87ac'
-              }
-            }}
-          >
-            <CloseIcon />
-          </IconButton>
-        )}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <MemberNotificationBell />
+          {isMobile && (
+            <IconButton
+              onClick={handleDrawerToggle}
+              sx={{ 
+                color: '#566573',
+                '&:hover': {
+                  backgroundColor: '#E8F0FE',
+                  color: '#0b87ac'
+                }
+              }}
+            >
+              <CloseIcon />
+            </IconButton>
+          )}
+        </Box>
       </Box>
 
       {/* User Info */}

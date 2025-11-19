@@ -13,9 +13,9 @@ Start-Sleep -Seconds 3
 
 # Start Cloudflare Tunnel for Backend
 Write-Host "Starting Cloudflare Tunnel for Backend..." -ForegroundColor Yellow
-Write-Host "Backend URL: https://trained-portion-dec-trek.trycloudflare.com" -ForegroundColor Green
+Write-Host "Backend URL: https://needed-particle-doll-more.trycloudflare.com" -ForegroundColor Green
 Write-Host ""
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "Write-Host 'Cloudflare Tunnel - Backend' -ForegroundColor Green; Write-Host 'Tunneling: http://localhost:8000 -> https://trained-portion-dec-trek.trycloudflare.com' -ForegroundColor Cyan; .\cloudflared.exe tunnel --url http://localhost:8000"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "Write-Host 'Cloudflare Tunnel - Backend' -ForegroundColor Green; Write-Host 'Tunneling: http://localhost:8000 -> https://needed-particle-doll-more.trycloudflare.com' -ForegroundColor Cyan; .\cloudflared.exe tunnel --url http://localhost:8000"
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
@@ -23,7 +23,7 @@ Write-Host "Backend Server and Cloudflare Tunnel Started!" -ForegroundColor Gree
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Local Backend: http://localhost:8000" -ForegroundColor White
-Write-Host "Cloudflare Backend: https://trained-portion-dec-trek.trycloudflare.com" -ForegroundColor White
+Write-Host "Cloudflare Backend: https://needed-particle-doll-more.trycloudflare.com" -ForegroundColor White
 Write-Host ""
 Write-Host "Press any key to exit (servers will continue running)..." -ForegroundColor Yellow
 $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")

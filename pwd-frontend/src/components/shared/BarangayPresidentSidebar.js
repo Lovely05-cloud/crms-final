@@ -10,14 +10,14 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import PersonIcon from '@mui/icons-material/Person';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { api } from '../../services/api';
 import toastService from '../../services/toastService';
+import NotificationBell from './NotificationBell';
+import barangayPresidentNotificationService from '../../services/barangayPresidentNotificationService';
 
 function BarangayPresidentSidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const { logout, currentUser } = useAuth();
-  const [pendingApplicationsCount, setPendingApplicationsCount] = useState(0);
 
   const handleLogout = async () => {
     const confirmed = await toastService.confirmAsync(
@@ -31,43 +31,18 @@ function BarangayPresidentSidebar() {
     }
   };
 
-  // Fetch pending applications count
-  useEffect(() => {
-    const fetchPendingApplicationsCount = async () => {
-      try {
-        console.log('Fetching pending applications count...');
-        console.log('Current user:', currentUser);
-        console.log('User role:', currentUser?.role);
-        console.log('User username:', currentUser?.username);
-        
-        const response = await api.get('/applications/dashboard/stats');
-        console.log('Dashboard stats response:', response);
-        
-        // Handle different response structures
-        let pendingCount = 0;
-        if (response && response.pendingApplications) {
-          pendingCount = response.pendingApplications;
-        } else if (response && response.data && response.data.pendingApplications) {
-          pendingCount = response.data.pendingApplications;
-        } else if (response && typeof response === 'object' && 'pendingApplications' in response) {
-          pendingCount = response.pendingApplications;
-        }
-        
-        console.log('Setting pending applications count to:', pendingCount);
-        setPendingApplicationsCount(pendingCount);
-        console.log('Current pendingApplicationsCount state:', pendingApplicationsCount);
-      } catch (error) {
-        console.error('Error fetching pending applications count:', error);
-        console.error('Error details:', error.message, error.status);
-        setPendingApplicationsCount(0);
-      }
-    };
+  // Navigation map for notification types
+  const notificationNavigationMap = {
+    'pending_application': '/barangay-president-pwd-records',
+    'default': '/barangay-president-dashboard'
+  };
 
-    fetchPendingApplicationsCount();
-    // Refresh count every 30 seconds
-    const interval = setInterval(fetchPendingApplicationsCount, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  // Create a wrapper service that includes currentUser
+  const notificationService = {
+    getAllNotifications: () => barangayPresidentNotificationService.getAllNotifications(currentUser),
+    getNotificationIcon: (type) => barangayPresidentNotificationService.getNotificationIcon(type),
+    getNotificationColor: (type) => barangayPresidentNotificationService.getNotificationColor(type)
+  };
   
   const isActive = (path) => {
     return location.pathname === path;
@@ -145,6 +120,10 @@ function BarangayPresidentSidebar() {
           />
         </Box>
         <Typography sx={{ fontWeight: 700, fontSize: '1.2rem', color: '#0b87ac' }}>CABUYAO PDAO RMS</Typography>
+        <NotificationBell 
+          notificationService={notificationService}
+          navigationMap={notificationNavigationMap}
+        />
       </Box>
 
       {/* User Info */}
@@ -173,7 +152,6 @@ function BarangayPresidentSidebar() {
           label="PWD Records" 
           path="/barangay-president-pwd-records"
           active={isActive('/barangay-president-pwd-records')}
-          badgeCount={pendingApplicationsCount}
         />
         <SidebarItem 
           icon={<CreditCardIcon />} 

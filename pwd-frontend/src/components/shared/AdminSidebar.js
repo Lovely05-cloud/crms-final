@@ -17,36 +17,27 @@ import Menu from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { supportService } from '../../services/supportService';
 import toastService from '../../services/toastService';
 import ChangePassword from '../auth/ChangePassword';
 import AdminPasswordReset from '../admin/AdminPasswordReset';
+import NotificationBell from './NotificationBell';
+import adminNotificationService from '../../services/adminNotificationService';
 
 function AdminSidebar({ isOpen, onToggle }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { logout, currentUser } = useAuth();
-  const [supportNotifications, setSupportNotifications] = useState(0);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [adminPasswordResetOpen, setAdminPasswordResetOpen] = useState(false);
 
-  useEffect(() => {
-    const fetchSupportNotifications = async () => {
-      try {
-        const tickets = await supportService.getTickets();
-        const openTickets = tickets.filter(ticket => ticket.status === 'open').length;
-        setSupportNotifications(openTickets);
-      } catch (error) {
-        console.error('Error fetching support notifications:', error);
-        setSupportNotifications(0);
-      }
-    };
-
-    fetchSupportNotifications();
-    // Refresh notifications every 30 seconds
-    const interval = setInterval(fetchSupportNotifications, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  // Navigation map for notification types
+  const notificationNavigationMap = {
+    'support_ticket': '/admin-support',
+    'pending_application': '/pwd-records',
+    'document_review': '/document-management',
+    'id_renewal': '/pwd-card',
+    'default': '/admin-dashboard'
+  };
 
   const handleLogout = async () => {
     const confirmed = await toastService.confirmAsync(
@@ -156,20 +147,26 @@ function AdminSidebar({ isOpen, onToggle }) {
           </Box>
         </Box>
         
-        {/* Hamburger Menu Button - Hidden on mobile, show on desktop */}
-        <IconButton
-          onClick={onToggle}
-          sx={{
-            display: { xs: 'none', md: 'flex' }, // Hide on mobile, show on desktop
-            color: '#566573',
-            '&:hover': {
-              backgroundColor: '#E8F0FE',
-              color: '#0b87ac'
-            }
-          }}
-        >
-          {isOpen ? <CloseIcon /> : <Menu />}
-        </IconButton>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <NotificationBell 
+            notificationService={adminNotificationService}
+            navigationMap={notificationNavigationMap}
+          />
+          {/* Hamburger Menu Button - Hidden on mobile, show on desktop */}
+          <IconButton
+            onClick={onToggle}
+            sx={{
+              display: { xs: 'none', md: 'flex' }, // Hide on mobile, show on desktop
+              color: '#566573',
+              '&:hover': {
+                backgroundColor: '#E8F0FE',
+                color: '#0b87ac'
+              }
+            }}
+          >
+            {isOpen ? <CloseIcon /> : <Menu />}
+          </IconButton>
+        </Box>
       </Box>
 
       {/* User Info */}
@@ -258,7 +255,6 @@ function AdminSidebar({ isOpen, onToggle }) {
           label="Support Desk" 
           path="/admin-support"
           active={isActive('/admin-support')}
-          badgeCount={supportNotifications}
         />
         <SidebarItem 
           icon={<DescriptionIcon />} 

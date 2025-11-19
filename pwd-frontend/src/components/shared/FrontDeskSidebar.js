@@ -11,34 +11,23 @@ import Menu from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { supportService } from '../../services/supportService';
 import toastService from '../../services/toastService';
 import ChangePassword from '../auth/ChangePassword';
+import NotificationBell from './NotificationBell';
+import frontDeskNotificationService from '../../services/frontDeskNotificationService';
 
 function FrontDeskSidebar({ isOpen, onToggle }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { logout, currentUser } = useAuth();
-  const [supportNotifications, setSupportNotifications] = useState(0);
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
 
-  useEffect(() => {
-    const fetchSupportNotifications = async () => {
-      try {
-        const tickets = await supportService.getTickets();
-        const openTickets = tickets.filter(ticket => ticket.status === 'open').length;
-        setSupportNotifications(openTickets);
-      } catch (error) {
-        console.error('Error fetching support notifications:', error);
-        setSupportNotifications(0);
-      }
-    };
-
-    fetchSupportNotifications();
-    // Refresh notifications every 30 seconds
-    const interval = setInterval(fetchSupportNotifications, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  // Navigation map for notification types
+  const notificationNavigationMap = {
+    'support_ticket': '/frontdesk-support',
+    'card_claim': '/frontdesk-pwd-card',
+    'default': '/dashboard'
+  };
 
   const handleLogout = async () => {
     const confirmed = await toastService.confirmAsync(
@@ -146,16 +135,22 @@ function FrontDeskSidebar({ isOpen, onToggle }) {
             </Typography>
           </Box>
         </Box>
-        <IconButton
-          onClick={onToggle}
-          sx={{ 
-            display: { xs: 'flex', md: 'none' },
-            color: '#7F8C8D',
-            p: 0.5
-          }}
-        >
-          {isOpen ? <CloseIcon fontSize="small" /> : <Menu fontSize="small" />}
-        </IconButton>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <NotificationBell 
+            notificationService={frontDeskNotificationService}
+            navigationMap={notificationNavigationMap}
+          />
+          <IconButton
+            onClick={onToggle}
+            sx={{ 
+              display: { xs: 'flex', md: 'none' },
+              color: '#7F8C8D',
+              p: 0.5
+            }}
+          >
+            {isOpen ? <CloseIcon fontSize="small" /> : <Menu fontSize="small" />}
+          </IconButton>
+        </Box>
       </Box>
 
       {/* User Info */}
@@ -236,7 +231,6 @@ function FrontDeskSidebar({ isOpen, onToggle }) {
           label="Support Desk"
           path="/frontdesk-support"
           active={isActive('/frontdesk-support')}
-          badgeCount={supportNotifications}
         />
         
         <SidebarItem

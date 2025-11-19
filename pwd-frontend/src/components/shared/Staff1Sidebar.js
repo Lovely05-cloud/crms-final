@@ -12,12 +12,22 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import toastService from '../../services/toastService';
 import ChangePassword from '../auth/ChangePassword';
+import NotificationBell from './NotificationBell';
+import staff1NotificationService from '../../services/staff1NotificationService';
 
 function Staff1Sidebar({ isOpen, onToggle }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { logout, currentUser } = useAuth();
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+
+  // Navigation map for notification types
+  const notificationNavigationMap = {
+    'pending_application': '/pwd-records',
+    'document_review': '/pwd-records',
+    'id_renewal': '/pwd-records',
+    'default': '/dashboard'
+  };
 
   const handleLogout = async () => {
     const confirmed = await toastService.confirmAsync(
@@ -122,16 +132,22 @@ function Staff1Sidebar({ isOpen, onToggle }) {
             </Typography>
           </Box>
         </Box>
-        <IconButton
-          onClick={onToggle}
-          sx={{ 
-            display: { xs: 'flex', md: 'none' },
-            color: '#7F8C8D',
-            p: 0.5
-          }}
-        >
-          {isOpen ? <CloseIcon fontSize="small" /> : <Menu fontSize="small" />}
-        </IconButton>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <NotificationBell 
+            notificationService={staff1NotificationService}
+            navigationMap={notificationNavigationMap}
+          />
+          <IconButton
+            onClick={onToggle}
+            sx={{ 
+              display: { xs: 'flex', md: 'none' },
+              color: '#7F8C8D',
+              p: 0.5
+            }}
+          >
+            {isOpen ? <CloseIcon fontSize="small" /> : <Menu fontSize="small" />}
+          </IconButton>
+        </Box>
       </Box>
 
       {/* User Info */}

@@ -30,8 +30,8 @@ const DEVELOPMENT_CONFIG = {
 // Cloudflare Tunnel Configuration (for accessing from other devices)
 const CLOUDFLARE_TUNNEL_CONFIG = {
   // Backend API through Cloudflare tunnel
-  API_BASE_URL: 'https://nylon-accountability-businesses-architect.trycloudflare.com/api',
-  STORAGE_BASE_URL: 'https://nylon-accountability-businesses-architect.trycloudflare.com',
+  API_BASE_URL: 'https://needed-particle-doll-more.trycloudflare.com/api',
+  STORAGE_BASE_URL: 'https://needed-particle-doll-more.trycloudflare.com',
 };
 
 // Export configuration - Change this to CLOUDFLARE_TUNNEL_CONFIG when using Cloudflare tunnels

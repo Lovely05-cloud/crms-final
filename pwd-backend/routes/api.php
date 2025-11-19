@@ -562,6 +562,24 @@ Route::post('/test-application-submission', function (Request $request) {
         $data = $request->all();
         $data['status'] = 'Pending Barangay Approval';
         $data['submissionDate'] = now();
+        
+        // Capitalize names to proper case (sentence case)
+        $toProperCase = function($text) {
+            if (empty($text)) return $text;
+            return implode(' ', array_map(function($word) {
+                return mb_convert_case($word, MB_CASE_TITLE, 'UTF-8');
+            }, explode(' ', trim($text))));
+        };
+        
+        if (isset($data['firstName'])) {
+            $data['firstName'] = $toProperCase($data['firstName']);
+        }
+        if (isset($data['lastName'])) {
+            $data['lastName'] = $toProperCase($data['lastName']);
+        }
+        if (isset($data['middleName']) && !empty(trim($data['middleName'])) && trim($data['middleName']) !== 'N/A') {
+            $data['middleName'] = $toProperCase($data['middleName']);
+        }
 
         // Handle file uploads
         $uploadPath = 'uploads/applications/' . date('Y/m/d');
@@ -1633,6 +1651,24 @@ Route::post('/applications', function (Request $request) {
             $data['middleName'] = 'N/A';
         } else {
             $data['middleName'] = trim($data['middleName']);
+        }
+        
+        // Capitalize names to proper case (sentence case)
+        $toProperCase = function($text) {
+            if (empty($text)) return $text;
+            return implode(' ', array_map(function($word) {
+                return mb_convert_case($word, MB_CASE_TITLE, 'UTF-8');
+            }, explode(' ', trim($text))));
+        };
+        
+        if (isset($data['firstName'])) {
+            $data['firstName'] = $toProperCase($data['firstName']);
+        }
+        if (isset($data['lastName'])) {
+            $data['lastName'] = $toProperCase($data['lastName']);
+        }
+        if (isset($data['middleName']) && !empty(trim($data['middleName'])) && trim($data['middleName']) !== 'N/A') {
+            $data['middleName'] = $toProperCase($data['middleName']);
         }
 
         // Handle file uploads

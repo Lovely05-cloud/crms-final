@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -62,6 +63,7 @@ const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB in bytes
 
 const AdminSupportDesk = () => {
   const { currentUser } = useAuth();
+  const location = useLocation();
 
   const [viewDialog, setViewDialog] = useState(false);
   const [selectedTicketId, setSelectedTicketId] = useState(null);
@@ -262,6 +264,28 @@ const AdminSupportDesk = () => {
       websocketService.off('connection', handleConnectionStatus);
     };
   }, []);
+
+  // Handle notification navigation - auto-open specific ticket
+  useEffect(() => {
+    if (location.state?.notificationItem) {
+      const notificationItem = location.state.notificationItem;
+      
+      // If it's a support ticket notification, open that ticket
+      if (notificationItem.type === 'support_ticket' && notificationItem.ticket_id) {
+        // Wait for tickets to load, then find and open the specific ticket
+        const timer = setTimeout(() => {
+          const ticket = tickets.find(t => t.id === notificationItem.ticket_id);
+          if (ticket) {
+            handleViewTicket(ticket);
+            // Clear the state to prevent re-opening on refresh
+            window.history.replaceState({}, document.title);
+          }
+        }, 500);
+        
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [location.state, tickets]);
 
   // Auto-scroll when selected ticket changes
   useEffect(() => {

@@ -3,6 +3,16 @@ const shouldExcludeFromDisplay = (value) => {
   return !value || value.trim() === '' || value.trim().toUpperCase() === 'N/A';
 };
 
+// Utility function to convert text to proper case (sentence case)
+// Capitalizes the first letter of each word and lowercases the rest
+export const toProperCase = (text) => {
+  if (!text) return '';
+  return text.split(' ').map(word => {
+    if (!word) return '';
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  }).join(' ');
+};
+
 // Utility function to format names with suffix
 export const formatFullName = (firstName, middleName, lastName, suffix) => {
   const parts = [];
