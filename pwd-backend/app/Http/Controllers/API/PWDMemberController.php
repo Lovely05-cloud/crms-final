@@ -273,7 +273,7 @@ class PWDMemberController extends Controller
     public function archived(Request $request)
     {
         try {
-            // Get all archived members
+             // Get all archived members
             $members = PWDMember::select([
                 'id',
                 'userID',
