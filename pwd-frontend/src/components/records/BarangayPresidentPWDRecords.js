@@ -117,6 +117,8 @@ function BarangayPresidentPWDRecords() {
   // Approval confirmation state
   const [approvalConfirmationOpen, setApprovalConfirmationOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState(null); // 'approve' or 'reject'
+  const [applicationRemarks, setApplicationRemarks] = useState(''); // Remarks for viewing/approving applications
+  const [documentRemarks, setDocumentRemarks] = useState({}); // Remarks per document (fieldName -> remarks)
   
   // Image preview modal state
   const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
@@ -481,7 +483,7 @@ function BarangayPresidentPWDRecords() {
     try {
       approveDelayRef.current = setTimeout(() => setApproving(true), 700);
       await api.post(`/applications/${selectedApplication.applicationID}/approve-barangay`, {
-        remarks: 'Approved by Barangay President'
+        remarks: applicationRemarks.trim() || 'Approved by Barangay President'
       });
 
       // Refresh the applications list
@@ -492,6 +494,8 @@ function BarangayPresidentPWDRecords() {
       setViewDetailsOpen(false);
       setSelectedApplication(null);
       setPendingAction(null);
+      setApplicationRemarks(''); // Reset remarks
+      setDocumentRemarks({}); // Reset document remarks
     } catch (err) {
       console.error('Error approving application:', err);
       toastService.error('Failed to endorse application: ' + (err.message || 'Unknown error'));
@@ -510,6 +514,7 @@ function BarangayPresidentPWDRecords() {
     setRejectionReason('');
     setCustomReason('');
     setRejectionRemarks('');
+    // Note: Don't reset documentRemarks here - keep them visible in the modal
   };
 
   const handleRejectSubmit = () => {
@@ -540,7 +545,6 @@ function BarangayPresidentPWDRecords() {
     const reasonMap = {
       'incomplete_information': 'Incomplete Information',
       'incorrect_information': 'Incorrect Information',
-      'document_resubmission': 'Document Resubmission/Correction Required',
       'does_not_meet_criteria': 'Does Not Meet Criteria',
       'other': customReason || 'Other'
     };
@@ -591,6 +595,12 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
         rejectionData.customReason = customReason.trim();
       }
       
+      // Include document-specific remarks if any
+      const documentRemarksEntries = Object.entries(documentRemarks).filter(([_, remarks]) => remarks && remarks.trim());
+      if (documentRemarksEntries.length > 0) {
+        rejectionData.documentRemarks = Object.fromEntries(documentRemarksEntries);
+      }
+      
       await api.post(`/applications/${selectedApplication.applicationID}/reject`, rejectionData);
 
       // Refresh the applications list
@@ -604,6 +614,7 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
       setRejectionReason('');
       setCustomReason('');
       setRejectionRemarks('');
+      setDocumentRemarks({});
     } catch (err) {
       console.error('Error rejecting application:', err);
       toastService.error('Failed to reject application: ' + (err.message || 'Unknown error'));
@@ -844,6 +855,9 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
   const handleCloseDetails = () => {
     setViewDetailsOpen(false);
     setSelectedApplication(null);
+    setApplicationRemarks(''); // Reset remarks when closing
+    setDocumentRemarks({}); // Reset document remarks when closing
+    setPendingAction(null); // Reset pending action when closing
   };
 
   // Document correction handlers
@@ -2232,60 +2246,45 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
                                 </Typography>
                               )}
                             </Box>
-                            {/* Remarks Column */}
-                            <Box sx={{ flex: 1, minWidth: 0 }}>
-                              <Typography variant="caption" sx={{ fontWeight: 600, color: '#34495E', display: 'block', mb: 0.5, fontSize: '0.7rem' }}>
-                                Remarks:
+                          </Box>
+                          {docInfo.description && (
+                            <Typography variant="caption" sx={{ color: '#7F8C8D', display: 'block', mt: 0.75, fontSize: '0.7rem' }}>
+                              {docInfo.description}
                               </Typography>
+                          )}
+                          {/* Document Remarks - Only show when rejecting */}
+                          {pendingAction === 'reject' && (
+                            <Box sx={{ mt: 1.5 }}>
                               <TextField
                                 fullWidth
                                 multiline
                                 minRows={2}
                                 maxRows={4}
                                 size="small"
-                                value={(() => {
-                                  // Parse remarks to find document-specific remarks
-                                  if (!selectedApplication.remarks) return '';
-                                  
-                                  // Check if remarks contain document-specific feedback
-                                  const remarks = selectedApplication.remarks || '';
-                                  const docName = docInfo.name.toLowerCase();
-                                  
-                                  // Try to extract document-specific remarks from the rejection data
-                                  // Format: "Rejection Reason: ...\n\nRemarks:\n..."
-                                  if (remarks.includes('Document Resubmission') || remarks.includes(docName)) {
-                                    // If document is mentioned in remarks, show it
-                                    const lines = remarks.split('\n');
-                                    const relevantLines = lines.filter(line => 
-                                      line.toLowerCase().includes(docName) || 
-                                      line.toLowerCase().includes(docInfo.name.toLowerCase())
-                                    );
-                                    return relevantLines.length > 0 ? relevantLines.join('\n') : remarks;
-                                  }
-                                  
-                                  return remarks;
-                                })()}
+                                placeholder={`Add remarks for ${docInfo.name} (optional)`}
+                                value={documentRemarks[fieldName] || ''}
+                                onChange={(e) => setDocumentRemarks(prev => ({
+                                  ...prev,
+                                  [fieldName]: e.target.value
+                                }))}
                                 variant="outlined"
                                 sx={{
                                   '& .MuiOutlinedInput-root': {
-                                    fontSize: '0.7rem',
+                                    fontSize: '0.75rem',
                                     bgcolor: '#FFFFFF',
                                     '& fieldset': {
-                                      borderColor: '#DEE2E6'
+                                      borderColor: '#E74C3C'
+                                    },
+                                    '&:hover fieldset': {
+                                      borderColor: '#C0392B'
+                                    },
+                                    '&.Mui-focused fieldset': {
+                                      borderColor: '#E74C3C'
                                     }
                                   }
                                 }}
-                                InputProps={{
-                                  readOnly: true
-                                }}
-                                placeholder="No remarks for this document"
                               />
                             </Box>
-                          </Box>
-                          {docInfo.description && (
-                            <Typography variant="caption" sx={{ color: '#7F8C8D', display: 'block', mt: 0.75, fontSize: '0.7rem' }}>
-                              {docInfo.description}
-                            </Typography>
                           )}
                         </Paper>
                       </Grid>
@@ -2293,6 +2292,50 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
                   }                  )}
                 </Grid>
               </Paper>
+
+              {/* Remarks Section - Only show for pending applications */}
+              {selectedApplication && (selectedApplication.status === 'Pending Barangay Approval' || selectedApplication.status === 'Pending') && (
+                <Paper sx={{ p: 2, border: '1px solid #DEE2E6', bgcolor: '#FFFFFF', mt: 2 }}>
+                  <Typography variant="h6" sx={{ 
+                    fontWeight: 'bold', 
+                    color: '#0b87ac', 
+                    mb: 1.5,
+                    borderBottom: '2px solid #3498DB',
+                    pb: 0.75,
+                    fontSize: '1rem'
+                  }}>
+                    Remarks
+                  </Typography>
+                  
+                  <TextField
+                    fullWidth
+                    multiline
+                    minRows={3}
+                    maxRows={6}
+                    placeholder="Enter remarks or notes about this application (optional)"
+                    value={applicationRemarks}
+                    onChange={(e) => setApplicationRemarks(e.target.value)}
+                    variant="outlined"
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        fontSize: '0.9rem',
+                        '& fieldset': {
+                          borderColor: '#DEE2E6'
+                        },
+                        '&:hover fieldset': {
+                          borderColor: '#0b87ac'
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#0b87ac'
+                        }
+                      }
+                    }}
+                  />
+                  <Typography variant="caption" sx={{ color: '#7F8C8D', display: 'block', mt: 0.5, fontSize: '0.75rem' }}>
+                    These remarks will be included when endorsing the application. Leave empty to use default message.
+                  </Typography>
+                </Paper>
+              )}
             </Box>
           )}
         </DialogContent>
@@ -2319,6 +2362,24 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
           </Button>
           {selectedApplication && (selectedApplication.status === 'Pending Barangay Approval' || selectedApplication.status === 'Pending') && (
             <>
+              <Button
+                onClick={handleRequestCorrection}
+                variant="outlined"
+                size="medium"
+                startIcon={<EditIcon />}
+                sx={{
+                  borderColor: '#F39C12',
+                  color: '#F39C12',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  '&:hover': {
+                    borderColor: '#E67E22',
+                    bgcolor: '#FEF5E7'  
+                  }
+                }}
+              >
+                Request Document Correction
+              </Button>
               {pendingAction === 'reject' ? (
                 <Button
                   onClick={handleRejectFromModal}
@@ -2653,7 +2714,6 @@ Thank you for your interest in Cabuyao PDAO RMS.`;
             >
               <MenuItem value="incomplete_information">Incomplete Information</MenuItem>
               <MenuItem value="incorrect_information">Incorrect Information</MenuItem>
-              <MenuItem value="document_resubmission">Document Resubmission/Correction Required</MenuItem>
               <MenuItem value="does_not_meet_criteria">Does Not Meet Criteria</MenuItem>
               <MenuItem value="other">Other</MenuItem>
             </Select>

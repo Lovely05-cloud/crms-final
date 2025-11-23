@@ -29,8 +29,34 @@ class EmailService
      * @param array $data
      * @return bool
      */
+    /**
+     * Calculate card claim date (10 business days from now)
+     * 
+     * @param \Carbon\Carbon|null $startDate
+     * @return string
+     */
+    private function calculateCardClaimDate($startDate = null)
+    {
+        $date = $startDate ? \Carbon\Carbon::parse($startDate) : \Carbon\Carbon::now();
+        $businessDays = 0;
+        $currentDate = $date->copy();
+        
+        while ($businessDays < 10) {
+            $currentDate->addDay();
+            // Skip weekends (Saturday = 6, Sunday = 0)
+            if ($currentDate->dayOfWeek !== \Carbon\Carbon::SATURDAY && $currentDate->dayOfWeek !== \Carbon\Carbon::SUNDAY) {
+                $businessDays++;
+            }
+        }
+        
+        return $currentDate->format('F d, Y');
+    }
+
     public function sendApplicationApprovalEmail($data)
     {
+        // Calculate card claim date (10 business days from approval)
+        $cardClaimDate = $this->calculateCardClaimDate();
+        
         $emailData = [
             'firstName' => $data['firstName'],
             'lastName' => $data['lastName'],
@@ -38,7 +64,8 @@ class EmailService
             'username' => $data['username'],
             'password' => $data['password'],
             'pwdId' => $data['pwdId'],
-            'loginUrl' => $data['loginUrl'] ?? config('app.frontend_url', 'http://localhost:3000/login')
+            'loginUrl' => $data['loginUrl'] ?? config('app.frontend_url', 'http://localhost:3000/login'),
+            'cardClaimDate' => $cardClaimDate
         ];
 
         $subject = 'PWD Application Approved - Account Created';
@@ -257,11 +284,8 @@ class EmailService
         $frontendUrl = config('app.frontend_url', 'http://localhost:3000');
         $statusCheckUrl = "{$frontendUrl}/check-status/{$referenceNumber}";
         
-        // Build rejection message combining reason and remarks
-        $rejectionMessage = "Rejection Reason: " . ($data['rejectionReason'] ?? 'Not specified');
-        if (!empty($data['remarks'])) {
-            $rejectionMessage .= "\n\nRemarks/Instructions:\n" . $data['remarks'];
-        }
+        // Build rejection message with just the remarks/notes
+        $rejectionMessage = !empty($data['remarks']) ? $data['remarks'] : ($data['rejectionReason'] ?? 'Your application has been rejected.');
         
         $emailData = [
             'firstName' => $data['firstName'],

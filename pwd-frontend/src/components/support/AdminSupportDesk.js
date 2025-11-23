@@ -194,7 +194,7 @@ const AdminSupportDesk = () => {
 
   // Handle connection status changes
   const handleConnectionStatus = (data) => {
-    console.log('Connection status:', data);
+    // Silent status update - no console logs
     setConnectionStatus(data.status);
   };
 
@@ -250,8 +250,8 @@ const AdminSupportDesk = () => {
 
     fetchTickets();
     
-    // Initialize WebSocket connection
-    initializeWebSocket();
+    // Initialize WebSocket connection - DISABLED
+    // initializeWebSocket();
     
     // Cleanup on unmount
     return () => {

@@ -3,6 +3,7 @@ import { Box, Typography, Button, Avatar, IconButton, Badge } from '@mui/materia
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import PeopleIcon from '@mui/icons-material/People';
 import AssignmentIcon from '@mui/icons-material/Assignment';
+import ArchiveIcon from '@mui/icons-material/Archive';
 import LogoutIcon from '@mui/icons-material/Logout';
 import PersonIcon from '@mui/icons-material/Person';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
@@ -228,6 +229,13 @@ function Staff1Sidebar({ isOpen, onToggle }) {
           label="PWD Records"
           path="/pwd-records"
           active={isActive('/pwd-records')}
+        />
+        
+        <SidebarItem
+          icon={<ArchiveIcon />}
+          label="Archived Members"
+          path="/archived-members"
+          active={isActive('/archived-members')}
         />
       </Box>
 

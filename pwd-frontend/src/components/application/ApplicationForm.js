@@ -1112,7 +1112,11 @@ function ApplicationForm() {
                    fullWidth
                    label="Phone Number"
                    value={formData.phoneNumber ?? ''}
-                   onChange={(e) => handleInputChange('phoneNumber', e.target.value)}
+                   onChange={(e) => {
+                     // Only allow numbers
+                     const numericValue = e.target.value.replace(/\D/g, '');
+                     handleInputChange('phoneNumber', numericValue);
+                   }}
                    error={!!errors.phoneNumber || !!duplicateErrors.phoneNumber}
                    helperText={errors.phoneNumber || duplicateErrors.phoneNumber}
                    required
@@ -1344,7 +1348,11 @@ function ApplicationForm() {
                      fullWidth
                      label="Guardian Phone Number"
                      value={formData.emergencyPhone ?? ''}
-                     onChange={(e) => handleInputChange('emergencyPhone', e.target.value)}
+                     onChange={(e) => {
+                       // Only allow numbers
+                       const numericValue = e.target.value.replace(/\D/g, '');
+                       handleInputChange('emergencyPhone', numericValue);
+                     }}
                      error={!!errors.emergencyPhone}
                      helperText={errors.emergencyPhone || "Contact number of guardian/emergency contact"}
                      required

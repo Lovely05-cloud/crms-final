@@ -13,6 +13,7 @@ class PWDMemberController extends Controller
     {
         try {
             // Optimize query: only select needed columns and use eager loading if needed
+            // Exclude archived members from normal listing
             $members = PWDMember::select([
                 'id',
                 'userID',
@@ -38,7 +39,7 @@ class PWDMemberController extends Controller
                 'cardExpirationDate',
                 'created_at',
                 'updated_at'
-            ])->get();
+            ])->whereNull('archived_at')->get();
             
             // Enhance members with data from approved applications if available
             $enhancedMembers = $members->map(function ($member) {
@@ -262,6 +263,90 @@ class PWDMemberController extends Controller
                 'success' => false,
                 'message' => 'Failed to renew card',
                 'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get archived members (expired ID cards)
+     */
+    public function archived(Request $request)
+    {
+        try {
+            // Get all archived members
+            $members = PWDMember::select([
+                'id',
+                'userID',
+                'pwd_id',
+                'pwd_id_generated_at',
+                'firstName',
+                'lastName',
+                'middleName',
+                'suffix',
+                'birthDate',
+                'gender',
+                'disabilityType',
+                'address',
+                'contactNumber',
+                'email',
+                'barangay',
+                'emergencyContact',
+                'emergencyPhone',
+                'emergencyRelationship',
+                'status',
+                'cardClaimed',
+                'cardIssueDate',
+                'cardExpirationDate',
+                'archived_at',
+                'created_at',
+                'updated_at'
+            ])->whereNotNull('archived_at')
+              ->orderBy('archived_at', 'desc')
+              ->get();
+            
+            // Get all userIDs for batch query
+            $userIDs = $members->pluck('userID')->filter()->unique()->toArray();
+            
+            // Fetch all approved applications in one query to avoid N+1
+            $applications = \App\Models\Application::whereIn('pwdID', $userIDs)
+                ->where('status', 'Approved')
+                ->get()
+                ->groupBy('pwdID')
+                ->map(function ($apps) {
+                    return $apps->first(); // Get the latest approved application
+                });
+            
+            // Enhance members with data from approved applications if available
+            $enhancedMembers = $members->map(function ($member) use ($applications) {
+                $approvedApplication = $applications->get($member->userID);
+                
+                if ($approvedApplication) {
+                    // Use application data as fallback if member data is missing
+                    if (empty($member->contactNumber) && !empty($approvedApplication->contactNumber)) {
+                        $member->contactNumber = $approvedApplication->contactNumber;
+                    }
+                    if (empty($member->emergencyContact) && !empty($approvedApplication->emergencyContact)) {
+                        $member->emergencyContact = $approvedApplication->emergencyContact;
+                    }
+                }
+                
+                return $member;
+            });
+            
+            return response()->json([
+                'success' => true,
+                'data' => $enhancedMembers->values(), // Reset array keys
+                'count' => $enhancedMembers->count()
+            ]);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Error fetching archived members', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to fetch archived members: ' . $e->getMessage()
             ], 500);
         }
     }

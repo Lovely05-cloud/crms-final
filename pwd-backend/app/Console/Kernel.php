@@ -19,6 +19,16 @@ class Kernel extends ConsoleKernel
         $schedule->command('pwd:check-card-renewals')
             ->daily()
             ->at('09:00'); // Run at 9:00 AM daily
+
+        // Archive members with expired ID cards
+        $schedule->command('pwd:archive-expired-members')
+            ->daily()
+            ->at('10:00'); // Run at 10:00 AM daily
+
+        // Delete rejected applications after 1 day
+        $schedule->command('applications:delete-rejected')
+            ->daily()
+            ->at('11:00'); // Run at 11:00 AM daily
     }
 
     /**

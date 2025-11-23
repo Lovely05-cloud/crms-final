@@ -233,7 +233,13 @@ const Analytics = () => {
   const [comparisonData, setComparisonData] = useState(null);
   const [reportTab, setReportTab] = useState(0);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
-  const [reportDateRange, setReportDateRange] = useState({ start: null, end: null });
+  const [reportDateRange, setReportDateRange] = useState({ 
+    periodType: 'monthly', // 'weekly', 'monthly', 'annually'
+    periodValue: null, // week number, month-year, or year
+    start: null, 
+    end: null 
+  });
+  const [reportSelectedBarangays, setReportSelectedBarangays] = useState([]); // Barangays for report generation
   const [reportData, setReportData] = useState(null);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [pdfBlob, setPdfBlob] = useState(null);
@@ -928,12 +934,66 @@ const Analytics = () => {
     return { analysis, insights, trends };
   };
 
+  // Helper function to calculate start/end dates from period selection
+  const calculatePeriodDates = (periodType, periodValue) => {
+    if (!periodValue) return { start: null, end: null };
+    
+    const now = new Date();
+    let startDate, endDate;
+    
+    switch (periodType) {
+      case 'weekly':
+        // periodValue is week number (1-52)
+        const year = now.getFullYear();
+        const jan1 = new Date(year, 0, 1);
+        // Get the first Monday of the year (or use Jan 1 if it's a Monday)
+        const firstMonday = new Date(jan1);
+        const dayOfWeek = jan1.getDay();
+        const daysToMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek) % 7;
+        firstMonday.setDate(jan1.getDate() + daysToMonday);
+        // Calculate start date for the selected week
+        const weekNumber = parseInt(periodValue);
+        startDate = new Date(firstMonday);
+        startDate.setDate(firstMonday.getDate() + (weekNumber - 1) * 7);
+        endDate = new Date(startDate);
+        endDate.setDate(startDate.getDate() + 6);
+        break;
+        
+      case 'monthly':
+        // periodValue is "YYYY-MM" format
+        const [yearMonth, month] = periodValue.split('-').map(Number);
+        startDate = new Date(yearMonth, month - 1, 1);
+        endDate = new Date(yearMonth, month, 0); // Last day of the month
+        break;
+        
+      case 'annually':
+        // periodValue is year (YYYY)
+        const yearValue = parseInt(periodValue);
+        startDate = new Date(yearValue, 0, 1);
+        endDate = new Date(yearValue, 11, 31);
+        break;
+        
+      default:
+        return { start: null, end: null };
+    }
+    
+    return { start: startDate, end: endDate };
+  };
+
   // Generate comprehensive analytics report
-  const generateComprehensiveReport = async (dateRange) => {
+  const generateComprehensiveReport = async (dateRange, selectedBarangays = []) => {
     setGeneratingReport(true);
     try {
-      const startDate = dateRange.start ? new Date(dateRange.start) : null;
-      const endDate = dateRange.end ? new Date(dateRange.end) : null;
+      // Calculate dates from period selection if needed
+      let startDate, endDate;
+      if (dateRange.periodType && dateRange.periodValue) {
+        const calculated = calculatePeriodDates(dateRange.periodType, dateRange.periodValue);
+        startDate = calculated.start;
+        endDate = calculated.end;
+      } else {
+        startDate = dateRange.start ? new Date(dateRange.start) : null;
+        endDate = dateRange.end ? new Date(dateRange.end) : null;
+      }
       
       // Get all data
       const members = window.__analytics_members || [];
@@ -974,6 +1034,37 @@ const Analytics = () => {
           if (!ticketDate) return false;
           const dt = new Date(ticketDate);
           return dt >= startDate && dt <= endDate;
+        });
+      }
+      
+      // Filter by barangay if provided
+      if (selectedBarangays && selectedBarangays.length > 0) {
+        filteredMembers = filteredMembers.filter(m => {
+          const b = m?.barangay || m?.barangay_name || m?.barangayName;
+          return b && selectedBarangays.includes(b);
+        });
+        
+        filteredApps = filteredApps.filter(a => {
+          const b = a?.barangay || a?.barangay_name || a?.barangayName;
+          return b && selectedBarangays.includes(b);
+        });
+        
+        filteredBenefits = filteredBenefits.filter(b => {
+          const memberBarangay = b?.barangay || b?.barangay_name || b?.barangayName;
+          // Also check if benefit is linked to a member
+          if (memberBarangay) {
+            return selectedBarangays.includes(memberBarangay);
+          }
+          // If benefit has a member reference, check that member's barangay
+          if (b?.pwdID || b?.member_id) {
+            const memberId = b.pwdID || b.member_id;
+            const member = members.find(m => (m.userID || m.id || m.pwdID) === memberId);
+            if (member) {
+              const mb = member?.barangay || member?.barangay_name || member?.barangayName;
+              return mb && selectedBarangays.includes(mb);
+            }
+          }
+          return false;
         });
       }
       
@@ -1057,6 +1148,7 @@ const Analytics = () => {
           start: startDate ? startDate.toISOString().split('T')[0] : 'All Time',
           end: endDate ? endDate.toISOString().split('T')[0] : 'All Time'
         },
+        selectedBarangays: selectedBarangays && selectedBarangays.length > 0 ? selectedBarangays : null,
         summary: {
           totalRegistrations: totalMembers,
           pendingApplications: pendingApps,
@@ -1096,13 +1188,28 @@ const Analytics = () => {
   };
 
   const handleGenerateReport = async () => {
-    if (!reportDateRange.start || !reportDateRange.end) {
-      alert('Please select both start and end dates for the report.');
+    // Validate period selection
+    if (!reportDateRange.periodType || !reportDateRange.periodValue) {
+      alert('Please select a period type and value for the report.');
       return;
     }
     
+    // Calculate dates from period selection
+    const calculatedDates = calculatePeriodDates(reportDateRange.periodType, reportDateRange.periodValue);
+    if (!calculatedDates.start || !calculatedDates.end) {
+      alert('Invalid period selection. Please try again.');
+      return;
+    }
+    
+    // Update reportDateRange with calculated dates
+    const updatedDateRange = {
+      ...reportDateRange,
+      start: calculatedDates.start.toISOString().split('T')[0],
+      end: calculatedDates.end.toISOString().split('T')[0]
+    };
+    
     try {
-      const report = await generateComprehensiveReport(reportDateRange);
+      const report = await generateComprehensiveReport(updatedDateRange, reportSelectedBarangays);
       // Report data is stored in state, dialog will show it
     } catch (error) {
       alert('Error generating report. Please try again.');
@@ -1113,11 +1220,18 @@ const Analytics = () => {
   const handleDownloadReport = () => {
     if (!reportData) return;
     
+    const barangayInfo = reportData.selectedBarangays && reportData.selectedBarangays.length > 0
+      ? (reportData.selectedBarangays.length === ALL_BARANGAYS.length 
+          ? 'All Barangays' 
+          : reportData.selectedBarangays.join(', '))
+      : 'All Barangays';
+    
     // Create a formatted text report
     const reportText = `
 PDAO ANALYTICS REPORT
 Generated: ${new Date(reportData.generatedAt).toLocaleString()}
 Date Range: ${reportData.dateRange.start} to ${reportData.dateRange.end}
+Barangays: ${barangayInfo}
 
 ================================================================================
 EXECUTIVE SUMMARY
@@ -1185,6 +1299,56 @@ END OF REPORT
     URL.revokeObjectURL(url);
   };
 
+  // Helper function to draw a simple bar chart in PDF
+  const drawBarChart = (doc, data, x, y, width, height, maxValue, labelKey, valueKey) => {
+    const barWidth = width / data.length;
+    const barSpacing = barWidth * 0.1;
+    const actualBarWidth = barWidth - barSpacing;
+    const chartHeight = height - 20; // Reserve space for labels
+    
+    // Draw bars
+    data.forEach((item, index) => {
+      const barHeight = (item[valueKey] / maxValue) * chartHeight;
+      const barX = x + (index * barWidth) + (barSpacing / 2);
+      const barY = y + chartHeight - barHeight;
+      
+      // Draw bar
+      doc.setFillColor(52, 152, 219);
+      doc.rect(barX, barY, actualBarWidth, barHeight, 'F');
+      
+      // Draw value on top of bar
+      doc.setFontSize(8);
+      doc.setTextColor(0, 0, 0);
+      doc.text(
+        item[valueKey].toString(),
+        barX + (actualBarWidth / 2),
+        barY - 2,
+        { align: 'center' }
+      );
+      
+      // Draw label below
+      doc.setFontSize(7);
+      const label = item[labelKey].toString();
+      const truncatedLabel = label.length > 8 ? label.substring(0, 8) + '...' : label;
+      doc.text(
+        truncatedLabel,
+        barX + (actualBarWidth / 2),
+        y + chartHeight + 5,
+        { align: 'center' }
+      );
+    });
+    
+    // Draw axes
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.5);
+    // Y-axis
+    doc.line(x, y, x, y + chartHeight);
+    // X-axis
+    doc.line(x, y + chartHeight, x + width, y + chartHeight);
+    
+    return y + height;
+  };
+
   const generatePDFReport = async () => {
     if (!reportData) return;
     
@@ -1231,8 +1395,17 @@ END OF REPORT
       doc.setFont('helvetica', 'normal');
       doc.text(`Date Range: ${reportData.dateRange.start} to ${reportData.dateRange.end}`, pageWidth / 2, 28, { align: 'center' });
       
+      const barangayInfo = reportData.selectedBarangays && reportData.selectedBarangays.length > 0
+        ? (reportData.selectedBarangays.length === ALL_BARANGAYS.length 
+            ? 'All Barangays' 
+            : reportData.selectedBarangays.length > 3
+              ? `${reportData.selectedBarangays.length} barangays selected`
+              : reportData.selectedBarangays.join(', '))
+        : 'All Barangays';
+      doc.text(`Barangays: ${barangayInfo}`, pageWidth / 2, 35, { align: 'center' });
+      
       doc.setFontSize(10);
-      doc.text(`Generated: ${new Date(reportData.generatedAt).toLocaleString()}`, pageWidth / 2, 35, { align: 'center' });
+      doc.text(`Generated: ${new Date(reportData.generatedAt).toLocaleString()}`, pageWidth / 2, 42, { align: 'center' });
       
       // Reset text color
       doc.setTextColor(0, 0, 0);
@@ -1350,6 +1523,103 @@ END OF REPORT
         });
         
         yPosition = doc.lastAutoTable ? doc.lastAutoTable.finalY + 15 : yPosition + 50;
+        
+        // Add bar chart visualization for monthly registrations
+        if (yPosition > pageHeight - 80) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        
+        if (reportData.breakdowns.monthlyRegistrations && reportData.breakdowns.monthlyRegistrations.length > 0) {
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(52, 152, 219);
+          doc.text('Monthly Registrations Chart', 20, yPosition);
+          yPosition += 10;
+          
+          const maxRegistrations = Math.max(...reportData.breakdowns.monthlyRegistrations.map(m => m.registrations || 0));
+          const chartData = reportData.breakdowns.monthlyRegistrations.slice(-6); // Last 6 months
+          yPosition = drawBarChart(
+            doc,
+            chartData,
+            20,
+            yPosition,
+            pageWidth - 40,
+            60,
+            maxRegistrations,
+            'month',
+            'registrations'
+          );
+          yPosition += 10;
+        }
+        
+        // Add textual analysis for monthly registrations
+        if (yPosition > pageHeight - 80) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        
+        const monthlyAnalysis = generateTextAnalysis('monthlyRegistrations', reportData.breakdowns.monthlyRegistrations);
+        if (monthlyAnalysis.analysis.length > 0 || monthlyAnalysis.insights.length > 0 || monthlyAnalysis.trends.length > 0) {
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(52, 152, 219);
+          doc.text('Textual Analysis', 20, yPosition);
+          yPosition += 8;
+          
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(0, 0, 0);
+          
+          if (monthlyAnalysis.analysis.length > 0) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Key Metrics:', 25, yPosition);
+            yPosition += 6;
+            doc.setFont('helvetica', 'normal');
+            monthlyAnalysis.analysis.forEach(metric => {
+              if (yPosition > pageHeight - 20) {
+                doc.addPage();
+                yPosition = 20;
+              }
+              doc.text(`• ${metric}`, 30, yPosition);
+              yPosition += 6;
+            });
+            yPosition += 3;
+          }
+          
+          if (monthlyAnalysis.trends.length > 0) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Trends:', 25, yPosition);
+            yPosition += 6;
+            doc.setFont('helvetica', 'normal');
+            monthlyAnalysis.trends.forEach(trend => {
+              if (yPosition > pageHeight - 20) {
+                doc.addPage();
+                yPosition = 20;
+              }
+              doc.text(`• ${trend}`, 30, yPosition);
+              yPosition += 6;
+            });
+            yPosition += 3;
+          }
+          
+          if (monthlyAnalysis.insights.length > 0) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Insights:', 25, yPosition);
+            yPosition += 6;
+            doc.setFont('helvetica', 'normal');
+            monthlyAnalysis.insights.forEach(insight => {
+              if (yPosition > pageHeight - 20) {
+                doc.addPage();
+                yPosition = 20;
+              }
+              doc.text(`• ${insight}`, 30, yPosition);
+              yPosition += 6;
+            });
+          }
+          
+          yPosition += 10;
+        }
       }
       
       // Top Barangays Breakdown
@@ -1392,6 +1662,87 @@ END OF REPORT
         });
         
         yPosition = doc.lastAutoTable ? doc.lastAutoTable.finalY + 15 : yPosition + 50;
+        
+        // Add bar chart visualization for top barangays
+        if (yPosition > pageHeight - 80) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        
+        if (reportData.breakdowns.topBarangays && reportData.breakdowns.topBarangays.length > 0) {
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(52, 152, 219);
+          doc.text('Top Barangays Chart', 20, yPosition);
+          yPosition += 10;
+          
+          const top5Barangays = reportData.breakdowns.topBarangays.slice(0, 5);
+          const maxRegistrations = Math.max(...top5Barangays.map(b => b.value || 0));
+          yPosition = drawBarChart(
+            doc,
+            top5Barangays,
+            20,
+            yPosition,
+            pageWidth - 40,
+            60,
+            maxRegistrations,
+            'name',
+            'value'
+          );
+          yPosition += 10;
+        }
+        
+        // Add textual analysis for top barangays
+        if (yPosition > pageHeight - 80) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        
+        const barangayAnalysis = generateTextAnalysis('topBarangays', reportData.breakdowns.topBarangays);
+        if (barangayAnalysis.analysis.length > 0 || barangayAnalysis.insights.length > 0) {
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(52, 152, 219);
+          doc.text('Textual Analysis', 20, yPosition);
+          yPosition += 8;
+          
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(0, 0, 0);
+          
+          if (barangayAnalysis.analysis.length > 0) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Key Metrics:', 25, yPosition);
+            yPosition += 6;
+            doc.setFont('helvetica', 'normal');
+            barangayAnalysis.analysis.forEach(metric => {
+              if (yPosition > pageHeight - 20) {
+                doc.addPage();
+                yPosition = 20;
+              }
+              doc.text(`• ${metric}`, 30, yPosition);
+              yPosition += 6;
+            });
+            yPosition += 3;
+          }
+          
+          if (barangayAnalysis.insights.length > 0) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Insights:', 25, yPosition);
+            yPosition += 6;
+            doc.setFont('helvetica', 'normal');
+            barangayAnalysis.insights.forEach(insight => {
+              if (yPosition > pageHeight - 20) {
+                doc.addPage();
+                yPosition = 20;
+              }
+              doc.text(`• ${insight}`, 30, yPosition);
+              yPosition += 6;
+            });
+          }
+          
+          yPosition += 10;
+        }
       }
       
       // Disability Distribution
@@ -1429,6 +1780,87 @@ END OF REPORT
         });
         
         yPosition = doc.lastAutoTable ? doc.lastAutoTable.finalY + 15 : yPosition + 50;
+        
+        // Add bar chart visualization for disability distribution
+        if (yPosition > pageHeight - 80) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        
+        if (reportData.breakdowns.disabilityDistribution && reportData.breakdowns.disabilityDistribution.length > 0) {
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(52, 152, 219);
+          doc.text('Disability Distribution Chart', 20, yPosition);
+          yPosition += 10;
+          
+          const topDisabilities = reportData.breakdowns.disabilityDistribution.slice(0, 6);
+          const maxCount = Math.max(...topDisabilities.map(d => d.value || 0));
+          yPosition = drawBarChart(
+            doc,
+            topDisabilities,
+            20,
+            yPosition,
+            pageWidth - 40,
+            60,
+            maxCount,
+            'name',
+            'value'
+          );
+          yPosition += 10;
+        }
+        
+        // Add textual analysis for disability distribution
+        if (yPosition > pageHeight - 80) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        
+        const disabilityAnalysis = generateTextAnalysis('disabilityDistribution', reportData.breakdowns.disabilityDistribution);
+        if (disabilityAnalysis.analysis.length > 0 || disabilityAnalysis.insights.length > 0) {
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(52, 152, 219);
+          doc.text('Textual Analysis', 20, yPosition);
+          yPosition += 8;
+          
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(0, 0, 0);
+          
+          if (disabilityAnalysis.analysis.length > 0) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Key Metrics:', 25, yPosition);
+            yPosition += 6;
+            doc.setFont('helvetica', 'normal');
+            disabilityAnalysis.analysis.forEach(metric => {
+              if (yPosition > pageHeight - 20) {
+                doc.addPage();
+                yPosition = 20;
+              }
+              doc.text(`• ${metric}`, 30, yPosition);
+              yPosition += 6;
+            });
+            yPosition += 3;
+          }
+          
+          if (disabilityAnalysis.insights.length > 0) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Insights:', 25, yPosition);
+            yPosition += 6;
+            doc.setFont('helvetica', 'normal');
+            disabilityAnalysis.insights.forEach(insight => {
+              if (yPosition > pageHeight - 20) {
+                doc.addPage();
+                yPosition = 20;
+              }
+              doc.text(`• ${insight}`, 30, yPosition);
+              yPosition += 6;
+            });
+          }
+          
+          yPosition += 10;
+        }
       }
       
       // Benefit Type Distribution
@@ -1466,6 +1898,103 @@ END OF REPORT
         });
         
         yPosition = doc.lastAutoTable ? doc.lastAutoTable.finalY + 15 : yPosition + 50;
+        
+        // Add bar chart visualization for benefit distribution
+        if (yPosition > pageHeight - 80) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        
+        if (reportData.breakdowns.benefitTypeDistribution && reportData.breakdowns.benefitTypeDistribution.length > 0) {
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(52, 152, 219);
+          doc.text('Benefit Distribution Chart', 20, yPosition);
+          yPosition += 10;
+          
+          const benefitData = reportData.breakdowns.benefitTypeDistribution;
+          const maxCount = Math.max(...benefitData.map(b => b.value || 0));
+          yPosition = drawBarChart(
+            doc,
+            benefitData,
+            20,
+            yPosition,
+            pageWidth - 40,
+            60,
+            maxCount,
+            'name',
+            'value'
+          );
+          yPosition += 10;
+        }
+        
+        // Add textual analysis for benefit distribution
+        if (yPosition > pageHeight - 80) {
+          doc.addPage();
+          yPosition = 20;
+        }
+        
+        const benefitAnalysis = generateTextAnalysis('benefitTypeDistribution', reportData.breakdowns.benefitTypeDistribution);
+        if (benefitAnalysis.analysis.length > 0 || benefitAnalysis.insights.length > 0 || benefitAnalysis.trends.length > 0) {
+          doc.setFontSize(14);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(52, 152, 219);
+          doc.text('Textual Analysis', 20, yPosition);
+          yPosition += 8;
+          
+          doc.setFontSize(10);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(0, 0, 0);
+          
+          if (benefitAnalysis.analysis.length > 0) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Key Metrics:', 25, yPosition);
+            yPosition += 6;
+            doc.setFont('helvetica', 'normal');
+            benefitAnalysis.analysis.forEach(metric => {
+              if (yPosition > pageHeight - 20) {
+                doc.addPage();
+                yPosition = 20;
+              }
+              doc.text(`• ${metric}`, 30, yPosition);
+              yPosition += 6;
+            });
+            yPosition += 3;
+          }
+          
+          if (benefitAnalysis.trends.length > 0) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Trends:', 25, yPosition);
+            yPosition += 6;
+            doc.setFont('helvetica', 'normal');
+            benefitAnalysis.trends.forEach(trend => {
+              if (yPosition > pageHeight - 20) {
+                doc.addPage();
+                yPosition = 20;
+              }
+              doc.text(`• ${trend}`, 30, yPosition);
+              yPosition += 6;
+            });
+            yPosition += 3;
+          }
+          
+          if (benefitAnalysis.insights.length > 0) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Insights:', 25, yPosition);
+            yPosition += 6;
+            doc.setFont('helvetica', 'normal');
+            benefitAnalysis.insights.forEach(insight => {
+              if (yPosition > pageHeight - 20) {
+                doc.addPage();
+                yPosition = 20;
+              }
+              doc.text(`• ${insight}`, 30, yPosition);
+              yPosition += 6;
+            });
+          }
+          
+          yPosition += 10;
+        }
       }
       
       // Ticket Status Breakdown
@@ -1519,9 +2048,20 @@ END OF REPORT
       const pdfBlob = doc.output('blob');
       setPdfBlob(pdfBlob);
       
+      // Automatically download the PDF
+      const url = URL.createObjectURL(pdfBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      const dateRangeStr = `${reportData.dateRange.start}_to_${reportData.dateRange.end}`;
+      link.download = `PDAO_Analytics_Report_${dateRangeStr}_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
     } catch (error) {
       console.error('Error generating PDF:', error);
-      alert('Error generating PDF. Please try again.');
+      alert('Error generating PDF: ' + (error.message || 'Please try again.'));
     } finally {
       setGeneratingPDF(false);
     }
@@ -2303,7 +2843,8 @@ END OF REPORT
           open={reportDialogOpen}
           onClose={() => {
             setReportDialogOpen(false);
-            setReportDateRange({ start: null, end: null });
+            setReportDateRange({ periodType: 'monthly', periodValue: null, start: null, end: null });
+            setReportSelectedBarangays([]);
             setReportData(null);
             setPdfBlob(null);
           }}
@@ -2333,7 +2874,7 @@ END OF REPORT
             <IconButton
               onClick={() => {
                 setReportDialogOpen(false);
-                setReportDateRange({ start: null, end: null });
+                setReportDateRange({ periodType: 'monthly', periodValue: null, start: null, end: null });
                 setReportData(null);
                 setPdfBlob(null);
                 setSelectedAnalytics({
@@ -2356,117 +2897,324 @@ END OF REPORT
             {!reportData ? (
               <>
                 <Typography variant="body1" sx={{ color: '#2C3E50', mb: 3 }}>
-                  Select a date range for the analytics report. The report will include a complete breakdown of all metrics, 
+                  Select a period type (weekly, monthly, or annually) for the analytics report. The report will include a complete breakdown of all metrics, 
                   visualizations, and insights for the selected period.
                 </Typography>
                 
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                   <Box sx={{ p: 2, bgcolor: '#F8F9FA', borderRadius: 2, border: '1px solid #E0E0E0' }}>
                     <Typography variant="subtitle1" sx={{ fontWeight: 600, color: '#2C3E50', mb: 2 }}>
-                      Report Date Range
+                      Report Period Selection
                     </Typography>
-                    <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                      <TextField
-                        type="date"
-                        label="Start Date"
-                        value={reportDateRange.start || ''}
-                        onChange={(e) => setReportDateRange({ ...reportDateRange, start: e.target.value })}
-                        InputLabelProps={{ shrink: true }}
-                        fullWidth
-                        required
-                        sx={{ minWidth: 200 }}
-                      />
-                      <TextField
-                        type="date"
-                        label="End Date"
-                        value={reportDateRange.end || ''}
-                        onChange={(e) => setReportDateRange({ ...reportDateRange, end: e.target.value })}
-                        InputLabelProps={{ shrink: true }}
-                        fullWidth
-                        required
-                        sx={{ minWidth: 200 }}
-                        inputProps={{
-                          min: reportDateRange.start || undefined
-                        }}
-                      />
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <FormControl fullWidth required>
+                        <InputLabel>Period Type</InputLabel>
+                        <Select
+                          value={reportDateRange.periodType || 'monthly'}
+                          onChange={(e) => setReportDateRange({ 
+                            ...reportDateRange, 
+                            periodType: e.target.value,
+                            periodValue: null // Reset period value when type changes
+                          })}
+                          label="Period Type"
+                        >
+                          <MenuItem value="weekly">Weekly (by Week Number)</MenuItem>
+                          <MenuItem value="monthly">Monthly (by Month and Year)</MenuItem>
+                          <MenuItem value="annually">Annually (by Year)</MenuItem>
+                        </Select>
+                      </FormControl>
+                      
+                      {reportDateRange.periodType === 'weekly' && (
+                        <FormControl fullWidth required>
+                          <InputLabel>Week Number</InputLabel>
+                          <Select
+                            value={reportDateRange.periodValue || ''}
+                            onChange={(e) => setReportDateRange({ ...reportDateRange, periodValue: e.target.value })}
+                            label="Week Number"
+                          >
+                            {Array.from({ length: 52 }, (_, i) => {
+                              const week = i + 1;
+                              const year = new Date().getFullYear();
+                              const jan1 = new Date(year, 0, 1);
+                              const dayOfWeek = jan1.getDay();
+                              const daysToMonday = dayOfWeek === 0 ? 1 : (8 - dayOfWeek) % 7;
+                              const firstMonday = new Date(jan1);
+                              firstMonday.setDate(jan1.getDate() + daysToMonday);
+                              const weekStart = new Date(firstMonday);
+                              weekStart.setDate(firstMonday.getDate() + (week - 1) * 7);
+                              const weekEnd = new Date(weekStart);
+                              weekEnd.setDate(weekStart.getDate() + 6);
+                              return (
+                                <MenuItem key={week} value={week.toString()}>
+                                  Week {week} ({weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })})
+                                </MenuItem>
+                              );
+                            })}
+                          </Select>
+                        </FormControl>
+                      )}
+                      
+                      {reportDateRange.periodType === 'monthly' && (
+                        <TextField
+                          type="month"
+                          label="Month and Year"
+                          value={reportDateRange.periodValue || ''}
+                          onChange={(e) => setReportDateRange({ ...reportDateRange, periodValue: e.target.value })}
+                          InputLabelProps={{ shrink: true }}
+                          fullWidth
+                          required
+                        />
+                      )}
+                      
+                      {reportDateRange.periodType === 'annually' && (
+                        <TextField
+                          type="number"
+                          label="Year"
+                          value={reportDateRange.periodValue || ''}
+                          onChange={(e) => setReportDateRange({ ...reportDateRange, periodValue: e.target.value })}
+                          InputLabelProps={{ shrink: true }}
+                          fullWidth
+                          required
+                          inputProps={{
+                            min: 2020,
+                            max: new Date().getFullYear() + 1
+                          }}
+                        />
+                      )}
                     </Box>
                   </Box>
                   
+                  {/* Barangay Selection */}
+                  <Box sx={{ p: 2, bgcolor: '#F8F9FA', borderRadius: 2, border: '1px solid #DEE2E6', mb: 2 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#2C3E50', mb: 1.5 }}>
+                      Filter by Barangay (Optional):
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#7F8C8D', display: 'block', mb: 1.5 }}>
+                      Select specific barangays to include in the report. Leave empty to include all barangays.
+                    </Typography>
+                    <FormControl fullWidth>
+                      <InputLabel>Barangays</InputLabel>
+                      <Select
+                        multiple
+                        label="Barangays"
+                        value={reportSelectedBarangays}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          // Filter out "All Barangays" if it was added
+                          const filteredValue = value.filter(v => v !== 'All Barangays');
+                          
+                          // If clicked on "All Barangays" toggle option
+                          if (value.includes('All Barangays') && !filteredValue.includes('All Barangays')) {
+                            if (reportSelectedBarangays.length === ALL_BARANGAYS.length) {
+                              setReportSelectedBarangays([]);
+                            } else {
+                              setReportSelectedBarangays(ALL_BARANGAYS);
+                            }
+                          } else {
+                            // If all barangays are selected, keep all; otherwise use filtered selection
+                            if (filteredValue.length === ALL_BARANGAYS.length) {
+                              setReportSelectedBarangays(ALL_BARANGAYS);
+                            } else {
+                              setReportSelectedBarangays(filteredValue);
+                            }
+                          }
+                        }}
+                        renderValue={(selected) => {
+                          if (selected.length === 0) return 'All Barangays';
+                          if (selected.length === ALL_BARANGAYS.length) return 'All Barangays';
+                          if (selected.length > 3) return `${selected.length} barangays selected`;
+                          return selected.join(', ');
+                        }}
+                        MenuProps={{
+                          PaperProps: {
+                            style: {
+                              maxHeight: 300
+                            }
+                          }
+                        }}
+                      >
+                        <MenuItem
+                          value="All Barangays"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (reportSelectedBarangays.length === ALL_BARANGAYS.length) {
+                              setReportSelectedBarangays([]);
+                            } else {
+                              setReportSelectedBarangays(ALL_BARANGAYS);
+                            }
+                          }}
+                        >
+                          <Checkbox checked={reportSelectedBarangays.length === ALL_BARANGAYS.length} />
+                          <ListItemText primary="All Barangays" />
+                        </MenuItem>
+                        {(uniqueBarangays || []).map(b => (
+                          <MenuItem key={b} value={b}>
+                            <Checkbox checked={reportSelectedBarangays.includes(b)} />
+                            <ListItemText primary={b} />
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Box>
+                  
                   <Box sx={{ p: 2, bgcolor: '#E8F4FD', borderRadius: 2, border: '1px solid #3498DB' }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#2C3E50', mb: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#2C3E50', mb: 2 }}>
                       Select Analytics to Include:
                     </Typography>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={selectedAnalytics.executiveSummary}
-                            onChange={(e) => setSelectedAnalytics({ ...selectedAnalytics, executiveSummary: e.target.checked })}
-                            sx={{ color: '#3498DB', '&.Mui-checked': { color: '#3498DB' } }}
-                          />
-                        }
-                        label="Executive Summary with all KPIs"
-                      />
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={selectedAnalytics.keyInsights}
-                            onChange={(e) => setSelectedAnalytics({ ...selectedAnalytics, keyInsights: e.target.checked })}
-                            sx={{ color: '#3498DB', '&.Mui-checked': { color: '#3498DB' } }}
-                          />
-                        }
-                        label="Key Insights"
-                      />
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={selectedAnalytics.monthlyRegistrations}
-                            onChange={(e) => setSelectedAnalytics({ ...selectedAnalytics, monthlyRegistrations: e.target.checked })}
-                            sx={{ color: '#3498DB', '&.Mui-checked': { color: '#3498DB' } }}
-                          />
-                        }
-                        label="Monthly Registrations Breakdown"
-                      />
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={selectedAnalytics.topBarangays}
-                            onChange={(e) => setSelectedAnalytics({ ...selectedAnalytics, topBarangays: e.target.checked })}
-                            sx={{ color: '#3498DB', '&.Mui-checked': { color: '#3498DB' } }}
-                          />
-                        }
-                        label="Top 10 Barangays by Registrations"
-                      />
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={selectedAnalytics.disabilityDistribution}
-                            onChange={(e) => setSelectedAnalytics({ ...selectedAnalytics, disabilityDistribution: e.target.checked })}
-                            sx={{ color: '#3498DB', '&.Mui-checked': { color: '#3498DB' } }}
-                          />
-                        }
-                        label="Disability Type Distribution"
-                      />
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={selectedAnalytics.benefitDistribution}
-                            onChange={(e) => setSelectedAnalytics({ ...selectedAnalytics, benefitDistribution: e.target.checked })}
-                            sx={{ color: '#3498DB', '&.Mui-checked': { color: '#3498DB' } }}
-                          />
-                        }
-                        label="Benefit Type Distribution"
-                      />
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={selectedAnalytics.ticketStatus}
-                            onChange={(e) => setSelectedAnalytics({ ...selectedAnalytics, ticketStatus: e.target.checked })}
-                            sx={{ color: '#3498DB', '&.Mui-checked': { color: '#3498DB' } }}
-                          />
-                        }
-                        label="Ticket Status Breakdown"
-                      />
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <Box sx={{ p: 1.5, bgcolor: 'white', borderRadius: 1, border: '1px solid #BDC3C7' }}>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={selectedAnalytics.executiveSummary}
+                              onChange={(e) => setSelectedAnalytics({ ...selectedAnalytics, executiveSummary: e.target.checked })}
+                              sx={{ color: '#3498DB', '&.Mui-checked': { color: '#3498DB' } }}
+                            />
+                          }
+                          label={
+                            <Box>
+                              <Typography variant="body2" sx={{ fontWeight: 600, color: '#2C3E50' }}>
+                                Executive Summary with all KPIs
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: '#7F8C8D', display: 'block', mt: 0.5 }}>
+                                A comprehensive overview of all key performance indicators including total registrations, pending applications, approved applications, cards issued, claimed IDs, renewed IDs, benefits distributed, and tickets resolved. Provides a high-level snapshot of system performance.
+                              </Typography>
+                            </Box>
+                          }
+                        />
+                      </Box>
+                      
+                      <Box sx={{ p: 1.5, bgcolor: 'white', borderRadius: 1, border: '1px solid #BDC3C7' }}>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={selectedAnalytics.keyInsights}
+                              onChange={(e) => setSelectedAnalytics({ ...selectedAnalytics, keyInsights: e.target.checked })}
+                              sx={{ color: '#3498DB', '&.Mui-checked': { color: '#3498DB' } }}
+                            />
+                          }
+                          label={
+                            <Box>
+                              <Typography variant="body2" sx={{ fontWeight: 600, color: '#2C3E50' }}>
+                                Key Insights
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: '#7F8C8D', display: 'block', mt: 0.5 }}>
+                                Important findings and patterns identified from the data analysis, including top performing barangays, registration trends, and significant changes in metrics. Helps identify areas of success and opportunities for improvement.
+                              </Typography>
+                            </Box>
+                          }
+                        />
+                      </Box>
+                      
+                      <Box sx={{ p: 1.5, bgcolor: 'white', borderRadius: 1, border: '1px solid #BDC3C7' }}>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={selectedAnalytics.monthlyRegistrations}
+                              onChange={(e) => setSelectedAnalytics({ ...selectedAnalytics, monthlyRegistrations: e.target.checked })}
+                              sx={{ color: '#3498DB', '&.Mui-checked': { color: '#3498DB' } }}
+                            />
+                          }
+                          label={
+                            <Box>
+                              <Typography variant="body2" sx={{ fontWeight: 600, color: '#2C3E50' }}>
+                                Monthly Registrations Breakdown
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: '#7F8C8D', display: 'block', mt: 0.5 }}>
+                                Detailed monthly breakdown of PWD member registrations showing trends over time. Includes a visual chart displaying registration patterns, peak months, and growth trends to help understand registration dynamics.
+                              </Typography>
+                            </Box>
+                          }
+                        />
+                      </Box>
+                      
+                      <Box sx={{ p: 1.5, bgcolor: 'white', borderRadius: 1, border: '1px solid #BDC3C7' }}>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={selectedAnalytics.topBarangays}
+                              onChange={(e) => setSelectedAnalytics({ ...selectedAnalytics, topBarangays: e.target.checked })}
+                              sx={{ color: '#3498DB', '&.Mui-checked': { color: '#3498DB' } }}
+                            />
+                          }
+                          label={
+                            <Box>
+                              <Typography variant="body2" sx={{ fontWeight: 600, color: '#2C3E50' }}>
+                                Top 10 Barangays by Registrations
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: '#7F8C8D', display: 'block', mt: 0.5 }}>
+                                Ranking of the top 10 barangays with the highest number of PWD member registrations. Includes registration counts and percentages to identify areas with the most active PWD community engagement.
+                              </Typography>
+                            </Box>
+                          }
+                        />
+                      </Box>
+                      
+                      <Box sx={{ p: 1.5, bgcolor: 'white', borderRadius: 1, border: '1px solid #BDC3C7' }}>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={selectedAnalytics.disabilityDistribution}
+                              onChange={(e) => setSelectedAnalytics({ ...selectedAnalytics, disabilityDistribution: e.target.checked })}
+                              sx={{ color: '#3498DB', '&.Mui-checked': { color: '#3498DB' } }}
+                            />
+                          }
+                          label={
+                            <Box>
+                              <Typography variant="body2" sx={{ fontWeight: 600, color: '#2C3E50' }}>
+                                Disability Type Distribution
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: '#7F8C8D', display: 'block', mt: 0.5 }}>
+                                Visual breakdown of PWD members by disability type, showing the distribution and percentage of each disability category. Helps understand the composition of the PWD community and plan targeted support services.
+                              </Typography>
+                            </Box>
+                          }
+                        />
+                      </Box>
+                      
+                      <Box sx={{ p: 1.5, bgcolor: 'white', borderRadius: 1, border: '1px solid #BDC3C7' }}>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={selectedAnalytics.benefitDistribution}
+                              onChange={(e) => setSelectedAnalytics({ ...selectedAnalytics, benefitDistribution: e.target.checked })}
+                              sx={{ color: '#3498DB', '&.Mui-checked': { color: '#3498DB' } }}
+                            />
+                          }
+                          label={
+                            <Box>
+                              <Typography variant="body2" sx={{ fontWeight: 600, color: '#2C3E50' }}>
+                                Benefit Type Distribution
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: '#7F8C8D', display: 'block', mt: 0.5 }}>
+                                Analysis of benefits distributed by type, showing which benefit programs are most utilized. Includes counts and percentages for each benefit category to help assess program effectiveness and resource allocation.
+                              </Typography>
+                            </Box>
+                          }
+                        />
+                      </Box>
+                      
+                      <Box sx={{ p: 1.5, bgcolor: 'white', borderRadius: 1, border: '1px solid #BDC3C7' }}>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={selectedAnalytics.ticketStatus}
+                              onChange={(e) => setSelectedAnalytics({ ...selectedAnalytics, ticketStatus: e.target.checked })}
+                              sx={{ color: '#3498DB', '&.Mui-checked': { color: '#3498DB' } }}
+                            />
+                          }
+                          label={
+                            <Box>
+                              <Typography variant="body2" sx={{ fontWeight: 600, color: '#2C3E50' }}>
+                                Ticket Status Breakdown
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: '#7F8C8D', display: 'block', mt: 0.5 }}>
+                                Overview of support ticket statuses including open, in-progress, and resolved tickets. Provides insights into support service efficiency, response times, and resolution rates to help improve customer service quality.
+                              </Typography>
+                            </Box>
+                          }
+                        />
+                      </Box>
                     </Box>
                     <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid #BDC3C7' }}>
                       <Button
@@ -2519,6 +3267,20 @@ END OF REPORT
                   <Typography variant="body2" sx={{ color: '#2C3E50' }}>
                     Date Range: {reportData.dateRange.start} to {reportData.dateRange.end}
                   </Typography>
+                  {reportData.selectedBarangays && reportData.selectedBarangays.length > 0 && (
+                    <Typography variant="body2" sx={{ color: '#2C3E50', mt: 0.5 }}>
+                      Barangays: {reportData.selectedBarangays.length === ALL_BARANGAYS.length 
+                        ? 'All Barangays' 
+                        : reportData.selectedBarangays.length > 3 
+                          ? `${reportData.selectedBarangays.length} barangays selected`
+                          : reportData.selectedBarangays.join(', ')}
+                    </Typography>
+                  )}
+                  {(!reportData.selectedBarangays || reportData.selectedBarangays.length === 0) && (
+                    <Typography variant="body2" sx={{ color: '#2C3E50', mt: 0.5 }}>
+                      Barangays: All Barangays
+                    </Typography>
+                  )}
                 </Box>
                 
                 <Box sx={{ maxHeight: 400, overflowY: 'auto', p: 2, bgcolor: '#F8F9FA', borderRadius: 2, border: '1px solid #E0E0E0' }}>
@@ -2670,7 +3432,7 @@ END OF REPORT
                 <Button
                   onClick={() => {
                     setReportDialogOpen(false);
-                    setReportDateRange({ start: null, end: null });
+                    setReportDateRange({ periodType: 'monthly', periodValue: null, start: null, end: null });
                   }}
                   variant="outlined"
                 >
@@ -2679,7 +3441,7 @@ END OF REPORT
                 <Button
                   onClick={handleGenerateReport}
                   variant="contained"
-                  disabled={!reportDateRange.start || !reportDateRange.end || generatingReport}
+                  disabled={!reportDateRange.periodType || !reportDateRange.periodValue || generatingReport}
                   startIcon={generatingReport ? <CircularProgress size={16} /> : <PictureAsPdfIcon />}
                   sx={{ bgcolor: '#27AE60', '&:hover': { bgcolor: '#229954' } }}
                 >
@@ -2690,7 +3452,7 @@ END OF REPORT
               <>
                 <Button
                   onClick={() => {
-                    setReportDateRange({ start: null, end: null });
+                    setReportDateRange({ periodType: 'monthly', periodValue: null, start: null, end: null });
                     setReportData(null);
                     setPdfBlob(null);
                   }}
@@ -2718,7 +3480,7 @@ END OF REPORT
                 <Button
                   onClick={() => {
                     setReportDialogOpen(false);
-                    setReportDateRange({ start: null, end: null });
+                    setReportDateRange({ periodType: 'monthly', periodValue: null, start: null, end: null });
                     setReportData(null);
                     setPdfBlob(null);
                   }}

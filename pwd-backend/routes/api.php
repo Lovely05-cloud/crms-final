@@ -406,7 +406,7 @@ Route::get('/test-approval-email/{applicationId}', function ($applicationId) {
             'username' => $application->email,
             'password' => $testPassword,
             'pwdId' => $testPwdId,
-            'loginUrl' => 'http://localhost:3000/login'
+            'loginUrl' => config('app.frontend_url', 'http://localhost:3000') . '/login'
         ], function ($message) use ($application) {
             $message->to($application->email)
                    ->subject('PWD Application Approved - Account Created')
@@ -489,7 +489,7 @@ Route::get('/test-send-approval-email/{email}', function ($email) {
             'username' => $email,
             'password' => 'testpass123',
             'pwdId' => 'PWD-TEST-001',
-            'loginUrl' => 'http://localhost:3000/login'
+            'loginUrl' => config('app.frontend_url', 'http://localhost:3000/login')
         ];
         
         $result = $emailService->sendApplicationApprovalEmail($testData);
@@ -505,6 +505,39 @@ Route::get('/test-send-approval-email/{email}', function ($email) {
     } catch (\Exception $e) {
         return response()->json([
             'error' => 'Failed to send test approval email',
+            'message' => $e->getMessage(),
+            'recipient' => $email
+        ], 500);
+    }
+});
+
+// Test sending rejection email to applicant
+Route::get('/test-send-rejection-email/{email}', function ($email) {
+    try {
+        $emailService = new \App\Services\EmailService();
+        
+        $testData = [
+            'email' => $email,
+            'firstName' => 'Test',
+            'lastName' => 'User',
+            'referenceNumber' => 'REF-2025-TEST-001',
+            'rejectionReason' => 'Incomplete Information',
+            'remarks' => 'This is a test rejection email. Some required documents were missing or incomplete. Please review the requirements and resubmit your application with all necessary documents.'
+        ];
+        
+        $result = $emailService->sendApplicationRejectionEmail($testData);
+        
+        return response()->json([
+            'message' => 'Test rejection email sent',
+            'success' => $result,
+            'recipient' => $email,
+            'from' => 'sarinonhoelivan29@gmail.com',
+            'test_data' => $testData
+        ]);
+        
+    } catch (\Exception $e) {
+        return response()->json([
+            'error' => 'Failed to send test rejection email',
             'message' => $e->getMessage(),
             'recipient' => $email
         ], 500);
@@ -1270,6 +1303,71 @@ Route::post('/applications/correction-request', function (Request $request) {
         return response()->json([
             'success' => false,
             'error' => 'Failed to create correction request'
+        ], 500);
+    }
+});
+
+// Remove document correction requirement by email (admin utility)
+Route::delete('/applications/remove-correction-request/{email}', function ($email) {
+    try {
+        // Find the application by email
+        $application = \App\Models\Application::where('email', $email)->first();
+        
+        if (!$application) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Application not found',
+                'message' => 'No application found with email: ' . $email
+            ], 404);
+        }
+
+        // Find and mark all pending correction requests as completed
+        $correctionRequests = \App\Models\DocumentCorrectionRequest::where('application_id_string', $application->applicationID)
+            ->where('status', 'pending')
+            ->get();
+
+        if ($correctionRequests->isEmpty()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'No pending correction requests found for this application',
+                'application_id' => $application->applicationID,
+                'email' => $email
+            ]);
+        }
+
+        $count = 0;
+        foreach ($correctionRequests as $correctionRequest) {
+            $correctionRequest->update([
+                'status' => 'completed',
+                'completed_at' => now()
+            ]);
+            $count++;
+        }
+
+        \Illuminate\Support\Facades\Log::info('Document correction requests removed', [
+            'email' => $email,
+            'application_id' => $application->applicationID,
+            'requests_completed' => $count
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Successfully removed {$count} pending correction request(s)",
+            'application_id' => $application->applicationID,
+            'email' => $email,
+            'requests_completed' => $count
+        ]);
+
+    } catch (\Exception $e) {
+        \Illuminate\Support\Facades\Log::error('Error removing correction request', [
+            'error' => $e->getMessage(),
+            'email' => $email
+        ]);
+        
+        return response()->json([
+            'success' => false,
+            'error' => 'Failed to remove correction request',
+            'message' => $e->getMessage()
         ], 500);
     }
 });
@@ -2146,6 +2244,7 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // PWD Member routes
     Route::apiResource('pwd-members', PWDMemberController::class);
+    Route::get('pwd-members-archived', [PWDMemberController::class, 'archived']);
     Route::get('pwd-members/{id}/applications', [PWDMemberController::class, 'getApplications']);
     Route::get('pwd-members/{id}/complaints', [PWDMemberController::class, 'getComplaints']);
     Route::get('pwd-members/{id}/benefit-claims', [PWDMemberController::class, 'getBenefitClaims']);
@@ -2427,7 +2526,7 @@ Route::get('/api/test-email/{email}', function ($email) {
             'username' => $email,
             'password' => 'test123',
             'pwdId' => 'PWD-000001',
-            'loginUrl' => 'http://localhost:3000/login'
+            'loginUrl' => config('app.frontend_url', 'http://localhost:3000') . '/login'
         ]);
 
         return response()->json([
@@ -2900,6 +2999,15 @@ Route::middleware('auth:sanctum')->post('/applications/{applicationId}/approve-a
             ], 400);
         }
 
+        // Check if user account already exists for this email
+        $existingUser = \App\Models\User::where('email', $application->email)->first();
+        if ($existingUser) {
+            return response()->json([
+                'error' => 'User account already exists',
+                'message' => 'A user account with this email already exists. Please check if this application was already approved.'
+            ], 400);
+        }
+
         // Generate secure random password
         $randomPassword = \Illuminate\Support\Str::random(12);
         
@@ -2908,29 +3016,57 @@ Route::middleware('auth:sanctum')->post('/applications/{applicationId}/approve-a
                 strtoupper(substr($application->lastName, 0, 2)) . 
                 str_pad($application->applicationID, 4, '0', STR_PAD_LEFT);
 
-        // Update application status (don't set pwdID as it's a foreign key to users.userID)
-        $application->status = 'Approved';
-        $application->save();
+        // Use database transaction to ensure atomicity
+        \Illuminate\Support\Facades\DB::beginTransaction();
 
+        try {
         // Get the next available user ID first
-        $nextUserId = \App\Models\User::max('userID') + 1;
-        
-        // Create PWD Member record
+            $nextUserId = \App\Models\User::max('userID');
+            if ($nextUserId === null) {
+                $nextUserId = 1;
+            } else {
+                $nextUserId = $nextUserId + 1;
+            }
+
+            // Create User account FIRST (required for foreign key constraint)
+            $newUser = new \App\Models\User();
+            $newUser->userID = $nextUserId;
+            $newUser->username = $application->email; // Use email as username
+            $newUser->email = $application->email;
+            $newUser->firstName = $application->firstName;
+            $newUser->lastName = $application->lastName;
+            $newUser->password = \Illuminate\Support\Facades\Hash::make($randomPassword);
+            $newUser->role = 'PWDMember';
+            $newUser->status = 'Active';
+            $newUser->password_change_required = true; // Require password change on first login
+            $newUser->save();
+            
+            // Create PWD Member record (after User is created)
         $pwdMember = new \App\Models\PWDMember();
         $pwdMember->userID = $nextUserId;
         $pwdMember->firstName = $application->firstName;
         $pwdMember->lastName = $application->lastName;
         $pwdMember->middleName = $application->middleName;
+            $pwdMember->suffix = $application->suffix;
         $pwdMember->birthDate = $application->birthDate;
+            $pwdMember->gender = $application->gender;
         $pwdMember->disabilityType = $application->disabilityType;
         $pwdMember->address = $application->address;
         $pwdMember->barangay = $application->barangay;
+            $pwdMember->contactNumber = $application->contactNumber;
+            $pwdMember->email = $application->email;
         $pwdMember->emergencyContact = $application->emergencyContact;
         $pwdMember->emergencyPhone = $application->emergencyPhone;
         $pwdMember->emergencyRelationship = $application->emergencyRelationship;
         $pwdMember->pwd_id = $pwdId;
+            $pwdMember->pwd_id_generated_at = now();
         $pwdMember->status = 'Active';
         $pwdMember->save();
+            
+            // Update application status and link to user
+            $application->status = 'Approved';
+            $application->pwdID = $nextUserId; // Link application to the created user
+            $application->save();
         
         // Generate and store QR code for the new PWD member
         try {
@@ -2940,18 +3076,30 @@ Route::middleware('auth:sanctum')->post('/applications/{applicationId}/approve-a
                 'error' => $qrError->getMessage(),
                 'pwd_member_id' => $pwdMember->userID
             ]);
+                // Don't fail the approval if QR code generation fails
+            }
+            
+            // Commit transaction
+            \Illuminate\Support\Facades\DB::commit();
+            
+            // Log successful account creation
+            \Illuminate\Support\Facades\Log::info('PWD Member account created successfully', [
+                'application_id' => $application->applicationID,
+                'user_id' => $newUser->userID,
+                'email' => $application->email,
+                'pwd_id' => $pwdId
+            ]);
+            
+        } catch (\Exception $e) {
+            // Rollback transaction on error
+            \Illuminate\Support\Facades\DB::rollBack();
+            \Illuminate\Support\Facades\Log::error('Failed to create PWD Member account during approval', [
+                'application_id' => $application->applicationID,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            throw $e;
         }
-
-        // Create User account
-        $newUser = new \App\Models\User();
-        $newUser->userID = $nextUserId; // Use next available ID instead of application ID
-        $newUser->username = $application->email; // Use email as username
-        $newUser->email = $application->email;
-        $newUser->password = \Illuminate\Support\Facades\Hash::make($randomPassword);
-        $newUser->role = 'PWDMember';
-        $newUser->status = 'Active';
-        $newUser->password_change_required = true; // Require password change on first login
-        $newUser->save();
 
         // Migrate documents from application to member_documents table
         try {
@@ -2971,6 +3119,17 @@ Route::middleware('auth:sanctum')->post('/applications/{applicationId}/approve-a
             // Don't fail the approval if migration fails, just log it
         }
 
+        // Calculate card claim date (10 business days from approval)
+        $cardClaimDate = \Carbon\Carbon::now();
+        $businessDays = 0;
+        while ($businessDays < 10) {
+            $cardClaimDate->addDay();
+            if ($cardClaimDate->dayOfWeek !== \Carbon\Carbon::SATURDAY && $cardClaimDate->dayOfWeek !== \Carbon\Carbon::SUNDAY) {
+                $businessDays++;
+            }
+        }
+        $cardClaimDateFormatted = $cardClaimDate->format('F d, Y');
+
         // Send approval email
         $emailSent = false;
         try {
@@ -2981,7 +3140,8 @@ Route::middleware('auth:sanctum')->post('/applications/{applicationId}/approve-a
                 'username' => $application->email,
                 'password' => $randomPassword,
                 'pwdId' => $pwdId,
-                'loginUrl' => config('app.frontend_url', 'http://localhost:3000/login')
+                'loginUrl' => config('app.frontend_url', 'http://localhost:3000/login'),
+                'cardClaimDate' => $cardClaimDateFormatted
             ], function ($message) use ($application) {
                 $message->to($application->email)
                         ->subject('PWD Application Approved - Your Account Details');

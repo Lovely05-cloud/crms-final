@@ -4,8 +4,10 @@ import toastService from './toastService';
 
 const pwdMemberService = {
   // Get all PWD members
-  async getAll(params = {}) {
+  async getAll(params = {}, options = {}) {
     // Use the proper PWD members API endpoint
+    // options.silent: if true, don't show toast errors (useful for background fetches)
+    const { silent = false } = options;
     try {
       const query = new URLSearchParams();
 
@@ -30,7 +32,9 @@ const pwdMemberService = {
       return response;
     } catch (error) {
       console.error('Error fetching PWD members:', error);
-      toastService.error('Failed to fetch PWD members: ' + (error.message || 'Unknown error'));
+      if (!silent) {
+        toastService.error('Failed to fetch PWD members: ' + (error.message || 'Unknown error'));
+      }
       throw error;
     }
   },

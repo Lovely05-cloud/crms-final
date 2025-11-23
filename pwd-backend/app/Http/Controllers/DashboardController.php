@@ -118,7 +118,9 @@ class DashboardController extends Controller
                 // Get claimed IDs count (members with cardClaimed = true)
                 $claimedIDsCount = 0;
                 try {
-                    $claimedIDsCount = PWDMember::where('cardClaimed', true)->count();
+                    $claimedIDsCount = PWDMember::where('cardClaimed', true)
+                        ->whereNull('archived_at')
+                        ->count();
                 } catch (\Exception $e) {
                     \Illuminate\Support\Facades\Log::error('Error fetching claimed IDs count:', ['error' => $e->getMessage()]);
                     $claimedIDsCount = 0;
@@ -128,6 +130,7 @@ class DashboardController extends Controller
                 $renewedIDsCount = 0;
                 try {
                     $renewedIDsCount = PWDMember::where('cardClaimed', true)
+                        ->whereNull('archived_at')
                         ->whereNotNull('cardIssueDate')
                         ->whereNotNull('cardExpirationDate')
                         ->whereColumn('cardExpirationDate', '>', 'cardIssueDate')

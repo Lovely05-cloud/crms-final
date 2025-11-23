@@ -21,7 +21,7 @@ const NETWORK_CONFIG = {
   STORAGE_BASE_URL: 'http://192.168.0.126:8000',
 };
 
-// Development Configuration (localhost only)
+// Development Configuration (localhost only) - Used as fallback
 const DEVELOPMENT_CONFIG = {
   API_BASE_URL: 'http://127.0.0.1:8000/api',
   STORAGE_BASE_URL: 'http://127.0.0.1:8000',
@@ -30,12 +30,15 @@ const DEVELOPMENT_CONFIG = {
 // Cloudflare Tunnel Configuration (for accessing from other devices)
 const CLOUDFLARE_TUNNEL_CONFIG = {
   // Backend API through Cloudflare tunnel
-  API_BASE_URL: 'https://needed-particle-doll-more.trycloudflare.com/api',
-  STORAGE_BASE_URL: 'https://needed-particle-doll-more.trycloudflare.com',
+  API_BASE_URL: 'https://translation-recipients-union-pierre.trycloudflare.com/api',
+  STORAGE_BASE_URL: 'https://translation-recipients-union-pierre.trycloudflare.com',
 };
 
-// Export configuration - Change this to CLOUDFLARE_TUNNEL_CONFIG when using Cloudflare tunnels
+// Primary configuration (Cloudflare) with localhost fallback
 export const API_CONFIG = CLOUDFLARE_TUNNEL_CONFIG;
+
+// Fallback configuration (localhost) - used when Cloudflare is unavailable
+export const FALLBACK_CONFIG = DEVELOPMENT_CONFIG;
 
 // Instructions for updating:
 // 1. Replace 'yourdomain.com' with your actual Hostinger domain

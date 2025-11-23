@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Button, Avatar, IconButton, Badge } from '@mui/material';
+import { Box, Typography, Button, Avatar, Badge, Collapse } from '@mui/material';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import PeopleIcon from '@mui/icons-material/People';
 import CreditCardIcon from '@mui/icons-material/CreditCard';
@@ -13,8 +13,10 @@ import DescriptionIcon from '@mui/icons-material/Description';
 import LogoutIcon from '@mui/icons-material/Logout';
 import PersonIcon from '@mui/icons-material/Person';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
-import Menu from '@mui/icons-material/Menu';
-import CloseIcon from '@mui/icons-material/Close';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import FolderIcon from '@mui/icons-material/Folder';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import toastService from '../../services/toastService';
@@ -29,6 +31,10 @@ function AdminSidebar({ isOpen, onToggle }) {
   const { logout, currentUser } = useAuth();
   const [changePasswordOpen, setChangePasswordOpen] = useState(false);
   const [adminPasswordResetOpen, setAdminPasswordResetOpen] = useState(false);
+  const [expandedSections, setExpandedSections] = useState({
+    memberManagement: true,
+    benefitTracking: true
+  });
 
   // Navigation map for notification types
   const notificationNavigationMap = {
@@ -56,18 +62,18 @@ function AdminSidebar({ isOpen, onToggle }) {
     return location.pathname === path;
   };
 
-  const SidebarItem = ({ icon, label, path, active = false, badgeCount = 0 }) => {
+  const SidebarItem = ({ icon, label, path, active = false, badgeCount = 0, indent = false }) => {
     return (
       <Box 
         onClick={() => navigate(path)}
         sx={{
           display: 'flex', 
           alignItems: 'center', 
-          gap: 1.5, // Restored to comfortable size
-          px: 1.5, // Restored to comfortable size
-          py: 1, // Restored to comfortable size
+          gap: 1.5,
+          px: indent ? 3.5 : 1.5,
+          py: 1,
           borderRadius: 2, 
-          mb: 0.5, // Restored to comfortable size
+          mb: 0.5,
           bgcolor: active ? '#0b87ac' : 'transparent',
           color: active ? '#FFFFFF' : '#566573',
           fontWeight: active ? 600 : 500,
@@ -87,6 +93,55 @@ function AdminSidebar({ isOpen, onToggle }) {
           React.cloneElement(icon, { sx: { fontSize: 22, color: active ? '#FFFFFF' : '#566573' } })
         )}
         <Typography sx={{ fontWeight: 'inherit', fontSize: '0.95rem', color: active ? '#FFFFFF' : '#566573' }}>{label}</Typography>
+      </Box>
+    );
+  };
+
+  const CollapsibleSection = ({ icon, label, children, sectionKey, defaultExpanded = true }) => {
+    const isExpanded = expandedSections[sectionKey] ?? defaultExpanded;
+    
+    const toggleSection = () => {
+      setExpandedSections(prev => ({
+        ...prev,
+        [sectionKey]: !prev[sectionKey]
+      }));
+    };
+
+    return (
+      <Box>
+        <Box 
+          onClick={toggleSection}
+          sx={{
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 1.5,
+            px: 1.5,
+            py: 1,
+            borderRadius: 2, 
+            mb: 0.5,
+            cursor: 'pointer',
+            color: '#566573',
+            fontWeight: 600,
+            '&:hover': {
+              background: '#E8F0FE',
+              color: '#0b87ac'
+            },
+            transition: 'all 0.2s ease-in-out'
+          }}
+        >
+          {isExpanded ? (
+            <ExpandMoreIcon sx={{ fontSize: 20, color: '#566573' }} />
+          ) : (
+            <ChevronRightIcon sx={{ fontSize: 20, color: '#566573' }} />
+          )}
+          {React.cloneElement(icon, { sx: { fontSize: 22, color: '#566573' } })}
+          <Typography sx={{ fontWeight: 600, fontSize: '0.95rem', color: '#566573' }}>{label}</Typography>
+        </Box>
+        <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+          <Box sx={{ pl: 0 }}>
+            {children}
+          </Box>
+        </Collapse>
       </Box>
     );
   };
@@ -152,20 +207,6 @@ function AdminSidebar({ isOpen, onToggle }) {
             notificationService={adminNotificationService}
             navigationMap={notificationNavigationMap}
           />
-          {/* Hamburger Menu Button - Hidden on mobile, show on desktop */}
-          <IconButton
-            onClick={onToggle}
-            sx={{
-              display: { xs: 'none', md: 'flex' }, // Hide on mobile, show on desktop
-              color: '#566573',
-              '&:hover': {
-                backgroundColor: '#E8F0FE',
-                color: '#0b87ac'
-              }
-            }}
-          >
-            {isOpen ? <CloseIcon /> : <Menu />}
-          </IconButton>
         </Box>
       </Box>
 
@@ -193,13 +234,14 @@ function AdminSidebar({ isOpen, onToggle }) {
 
       {/* Navigation Menu */}
       <Box sx={{ 
-        p: 1.5, // Restored to comfortable size
+        p: 1.5,
         flex: 1, 
-        mt: 1, // Restored to comfortable size
+        mt: 1,
         opacity: { xs: isOpen ? 1 : 0, md: 1 },
         transition: 'opacity 0.3s ease-in-out',
-        overflow: 'hidden', // No scrolling
-        minHeight: 0 // Allow flex item to shrink
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        minHeight: 0
       }}>
         <SidebarItem 
           icon={<DashboardIcon />} 
@@ -207,42 +249,75 @@ function AdminSidebar({ isOpen, onToggle }) {
           path="/admin-dashboard"
           active={isActive('/admin-dashboard') || isActive('/dashboard')}
         />
-        {/* Full SuperAdmin/Admin navigation */}
-        <SidebarItem 
-          icon={<PeopleIcon />} 
-          label="PWD Masterlist" 
-          path="/pwd-records"
-          active={isActive('/pwd-records')}
-        />
-        <SidebarItem 
-          icon={<CreditCardIcon />} 
-          label="PWD Card" 
-          path="/pwd-card"
-          active={isActive('/pwd-card')}
-        />
+        
+        {/* Member Management Section */}
+        <CollapsibleSection 
+          icon={<PeopleIcon />}
+          label="Member Management"
+          sectionKey="memberManagement"
+          defaultExpanded={true}
+        >
+          <SidebarItem 
+            icon={<PeopleIcon />} 
+            label="PWD Masterlist" 
+            path="/pwd-records"
+            active={isActive('/pwd-records')}
+            indent={true}
+          />
+          <SidebarItem 
+            icon={<CreditCardIcon />} 
+            label="PWD Card" 
+            path="/pwd-card"
+            active={isActive('/pwd-card')}
+            indent={true}
+          />
+          {currentUser?.role === 'SuperAdmin' && (
+            <SidebarItem 
+              icon={<PeopleIcon />} 
+              label="Archived Members" 
+              path="/archived-members"
+              active={isActive('/archived-members')}
+              indent={true}
+            />
+          )}
+        </CollapsibleSection>
+
+        {/* Benefit Tracking Section */}
+        <CollapsibleSection 
+          icon={<TrackChangesIcon />}
+          label="Benefit Tracking"
+          sectionKey="benefitTracking"
+          defaultExpanded={true}
+        >
+          <SidebarItem 
+            icon={<TrackChangesIcon />} 
+            label="Benefit Tracking" 
+            path="/benefit-tracking"
+            active={isActive('/benefit-tracking')}
+            indent={true}
+          />
+          <SidebarItem 
+            icon={<FavoriteIcon />} 
+            label="Ayuda" 
+            path="/ayuda"
+            active={isActive('/ayuda')}
+            indent={true}
+          />
+          <SidebarItem 
+            icon={<DescriptionIcon />} 
+            label="Claim History" 
+            path="/claim-history"
+            active={isActive('/claim-history')}
+            indent={true}
+          />
+        </CollapsibleSection>
+
+        {/* Remaining Navigation Items */}
         <SidebarItem 
           icon={<BarChartIcon />} 
           label="Analytics" 
           path="/analytics"
           active={isActive('/analytics')}
-        />
-        <SidebarItem 
-          icon={<FavoriteIcon />} 
-          label="Ayuda" 
-          path="/ayuda"
-          active={isActive('/ayuda')}
-        />
-        <SidebarItem 
-          icon={<TrackChangesIcon />} 
-          label="Benefit Tracking" 
-          path="/benefit-tracking"
-          active={isActive('/benefit-tracking')}
-        />
-        <SidebarItem 
-          icon={<DescriptionIcon />} 
-          label="Claim History" 
-          path="/claim-history"
-          active={isActive('/claim-history')}
         />
         <SidebarItem 
           icon={<AnnouncementIcon />} 

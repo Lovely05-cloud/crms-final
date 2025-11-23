@@ -35,8 +35,9 @@ class CheckCardRenewals extends Command
         $today = Carbon::today();
         $thirtyDaysFromNow = Carbon::today()->addDays(30);
 
-        // Find cards that are expiring within the next 30 days
+        // Find cards that are expiring within the next 30 days (exclude archived members)
         $membersNeedingRenewal = PWDMember::where('cardClaimed', true)
+            ->whereNull('archived_at')
             ->whereNotNull('cardExpirationDate')
             ->whereBetween('cardExpirationDate', [$today, $thirtyDaysFromNow])
             ->get();
@@ -71,8 +72,9 @@ class CheckCardRenewals extends Command
             }
         }
 
-        // Also check for cards ready to claim (when PWD ID is generated but not claimed)
+        // Also check for cards ready to claim (when PWD ID is generated but not claimed, exclude archived)
         $membersReadyToClaim = PWDMember::where('cardClaimed', false)
+            ->whereNull('archived_at')
             ->whereNotNull('pwd_id')
             ->whereNotNull('pwd_id_generated_at')
             ->get();

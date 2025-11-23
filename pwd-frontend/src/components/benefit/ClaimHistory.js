@@ -386,7 +386,7 @@ const ClaimHistory = () => {
     
     // Build the API URL for the authorization letter
     try {
-      const apiBaseUrl = API_CONFIG?.API_BASE_URL || 'https://needed-particle-doll-more.trycloudflare.com/api';
+      const apiBaseUrl = API_CONFIG?.API_BASE_URL || 'https://dealt-technician-beautiful-street.trycloudflare.com/api';
       let url = `${apiBaseUrl}/authorization-letter/${claimId}`;
       
       // Add authentication token if available

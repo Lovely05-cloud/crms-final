@@ -6,6 +6,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.0.2",
+        "cboden/ratchet": "^0.4.4",
         "doctrine/dbal": "^4.3",
         "google/apiclient": "^2.18",
         "google/cloud-translate": "^2.0",

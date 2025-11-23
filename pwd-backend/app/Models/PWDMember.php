@@ -34,7 +34,8 @@ class PWDMember extends Model
         'status',
         'cardClaimed',
         'cardIssueDate',
-        'cardExpirationDate'
+        'cardExpirationDate',
+        'archived_at'
     ];
 
     // Relationships
@@ -72,6 +73,7 @@ class PWDMember extends Model
         'birthDate' => 'date',
         'cardIssueDate' => 'date',
         'cardExpirationDate' => 'date',
-        'cardClaimed' => 'boolean'
+        'cardClaimed' => 'boolean',
+        'archived_at' => 'datetime'
     ];
 }

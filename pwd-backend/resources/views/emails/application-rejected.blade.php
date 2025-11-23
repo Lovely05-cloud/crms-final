@@ -79,7 +79,7 @@
         </div>
         
         <div class="rejection-reason">
-            <h3>❌ Rejection Reason</h3>
+            <h3>❌ Rejection Message</h3>
             <p style="white-space: pre-wrap;">{{ $rejectionReason }}</p>
         </div>
         

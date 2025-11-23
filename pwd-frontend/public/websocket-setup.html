@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket URL Setup</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 600;
+        }
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        input:focus {
+            outline: none;
+            border-color: #0b87ac;
+        }
+        button {
+            background: #0b87ac;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #0a6b8a;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+            border-left: 4px solid #0b87ac;
+        }
+        .current-url {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        .instructions {
+            background: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+            border-left: 4px solid #ffc107;
+        }
+        .instructions ol {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        .instructions li {
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 WebSocket URL Setup</h1>
+        <p class="subtitle">Configure your WebSocket connection URL for real-time features</p>
+
+        <div class="input-group">
+            <label for="wsUrl">WebSocket Tunnel URL:</label>
+            <input 
+                type="text" 
+                id="wsUrl" 
+                placeholder="wss://your-websocket-tunnel-url.trycloudflare.com"
+                value=""
+            />
+            <small style="color: #666; display: block; margin-top: 5px;">
+                Enter the WebSocket tunnel URL from Cloudflare (without port number)
+            </small>
+        </div>
+
+        <button onclick="setWebSocketUrl()">Set WebSocket URL</button>
+        <button onclick="checkCurrentUrl()" style="background: #6c757d;">Check Current URL</button>
+        <button onclick="clearWebSocketUrl()" style="background: #dc3545;">Clear URL</button>
+
+        <div id="status" class="status"></div>
+
+        <div class="info">
+            <strong>ℹ️ Current WebSocket URL:</strong>
+            <div id="currentUrl" class="current-url">Not set</div>
+        </div>
+
+        <div class="instructions">
+            <strong>📋 How to get your WebSocket tunnel URL:</strong>
+            <ol>
+                <li>Make sure WebSocket server is running: <code>php start-websocket-server.php</code></li>
+                <li>Open a new PowerShell window</li>
+                <li>Run: <code>.\cloudflared.exe tunnel --url ws://localhost:8080</code></li>
+                <li>Copy the URL that appears (e.g., <code>https://random-words.trycloudflare.com</code>)</li>
+                <li>Change <code>https://</code> to <code>wss://</code> and paste it above</li>
+                <li>Click "Set WebSocket URL"</li>
+                <li>Refresh your application page</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        // Check current URL on load
+        window.onload = function() {
+            checkCurrentUrl();
+        };
+
+        function setWebSocketUrl() {
+            const url = document.getElementById('wsUrl').value.trim();
+            const statusDiv = document.getElementById('status');
+
+            if (!url) {
+                showStatus('Please enter a WebSocket URL', 'error');
+                return;
+            }
+
+            // Validate URL format
+            if (!url.startsWith('wss://') && !url.startsWith('ws://')) {
+                showStatus('URL must start with wss:// or ws://', 'error');
+                return;
+            }
+
+            // Remove trailing slash
+            const cleanUrl = url.replace(/\/$/, '');
+
+            try {
+                localStorage.setItem('websocket.url', cleanUrl);
+                showStatus('✅ WebSocket URL set successfully! Please refresh your application page.', 'success');
+                checkCurrentUrl();
+                
+                // Clear input
+                document.getElementById('wsUrl').value = '';
+            } catch (e) {
+                showStatus('❌ Error setting URL: ' + e.message, 'error');
+            }
+        }
+
+        function checkCurrentUrl() {
+            const currentUrl = localStorage.getItem('websocket.url');
+            const currentUrlDiv = document.getElementById('currentUrl');
+            
+            if (currentUrl) {
+                currentUrlDiv.textContent = currentUrl;
+                currentUrlDiv.style.color = '#28a745';
+            } else {
+                currentUrlDiv.textContent = 'Not set';
+                currentUrlDiv.style.color = '#dc3545';
+            }
+        }
+
+        function clearWebSocketUrl() {
+            localStorage.removeItem('websocket.url');
+            showStatus('WebSocket URL cleared', 'success');
+            checkCurrentUrl();
+        }
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = 'status ' + type;
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                statusDiv.className = 'status';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
+

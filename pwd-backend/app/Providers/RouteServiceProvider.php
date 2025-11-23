@@ -213,10 +213,11 @@ class RouteServiceProvider extends ServiceProvider
                     // Combine rejection reason and remarks for the remarks field
                     $fullRemarks = "Rejection Reason: {$rejectionReasonText}\n\nRemarks:\n{$request->remarks}";
 
-                    // Update application status to Rejected (do not delete - retain all data)
+                    // Update application status to Rejected and schedule deletion after 1 day
                     $application->update([
                         'status' => 'Rejected',
-                        'remarks' => $fullRemarks
+                        'remarks' => $fullRemarks,
+                        'scheduled_deletion_at' => now()->addDay() // Schedule deletion after 1 day
                     ]);
 
                     // Send rejection email notification
@@ -1300,6 +1301,17 @@ class RouteServiceProvider extends ServiceProvider
                         'pwdID' => $pwdUser->userID
                     ]);
 
+                    // Calculate card claim date (10 business days from approval)
+                    $cardClaimDate = \Carbon\Carbon::now();
+                    $businessDays = 0;
+                    while ($businessDays < 10) {
+                        $cardClaimDate->addDay();
+                        if ($cardClaimDate->dayOfWeek !== \Carbon\Carbon::SATURDAY && $cardClaimDate->dayOfWeek !== \Carbon\Carbon::SUNDAY) {
+                            $businessDays++;
+                        }
+                    }
+                    $cardClaimDateFormatted = $cardClaimDate->format('F d, Y');
+
                     // Send email notification using SMTP
                     try {
                         \Illuminate\Support\Facades\Mail::send('emails.application-approved', [
@@ -1309,7 +1321,8 @@ class RouteServiceProvider extends ServiceProvider
                             'username' => $pwdUser->username,
                             'password' => $randomPassword,
                             'pwdId' => $pwdId,
-                            'loginUrl' => 'http://localhost:3000/login'
+                            'loginUrl' => config('app.frontend_url', 'http://localhost:3000') . '/login',
+                            'cardClaimDate' => $cardClaimDateFormatted
                         ], function ($message) use ($application) {
                             $message->to($application->email)
                                    ->subject('PWD Application Approved - Welcome!')
@@ -1367,7 +1380,7 @@ class RouteServiceProvider extends ServiceProvider
                         'username' => $email,
                         'password' => 'test123',
                         'pwdId' => 'PWD-000001',
-                        'loginUrl' => 'http://localhost:3000/login'
+                        'loginUrl' => config('app.frontend_url', 'http://localhost:3000') . '/login'
                     ], function ($message) use ($email) {
                         $message->to($email)
                                ->subject('PWD Application Approved - Test')

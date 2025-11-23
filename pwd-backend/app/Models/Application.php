@@ -49,14 +49,16 @@ class Application extends Model
         'barangayCertificate',
         'submissionDate',
         'status',
-        'remarks'
+        'remarks',
+        'scheduled_deletion_at'
     ];
 
     protected $casts = [
         'submissionDate' => 'date',
         'birthDate' => 'date',
         'disabilityDate' => 'date',
-        'status' => 'string'
+        'status' => 'string',
+        'scheduled_deletion_at' => 'datetime'
     ];
 
     // Relationships

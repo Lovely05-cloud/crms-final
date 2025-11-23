@@ -8,6 +8,7 @@ use App\Models\SupportTicketMessage;
 use App\Models\PWDMember;
 use App\Models\Admin;
 use App\Models\Notification;
+use App\Services\WebSocketBroadcastService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -183,7 +184,15 @@ class SupportTicketController extends Controller
                 $messageData['attachment_size'] = $file->getSize();
             }
 
-            SupportTicketMessage::create($messageData);
+            $message = SupportTicketMessage::create($messageData);
+
+            // Broadcast new message via WebSocket
+            try {
+                $messageData = $message->load('sender');
+                WebSocketBroadcastService::broadcastNewMessage($ticket->id, $messageData);
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('WebSocket broadcast error: ' . $e->getMessage());
+            }
 
             return response()->json([
                 'message' => 'Support ticket created successfully',
@@ -486,6 +495,15 @@ class SupportTicketController extends Controller
 
             $message = SupportTicketMessage::create($messageData);
 
+            // Broadcast new message via WebSocket
+            try {
+                $messageData = $message->load('sender');
+                WebSocketBroadcastService::broadcastNewMessage($ticket->id, $messageData);
+            } catch (\Exception $e) {
+                // Log error but don't fail the request
+                \Illuminate\Support\Facades\Log::error('WebSocket broadcast error: ' . $e->getMessage());
+            }
+
             // Update ticket status based on who is replying
             if ($ticket->status === 'open') {
                 // If admin/frontdesk replies to a new ticket, set to in_progress (PWD member needs to respond)
@@ -514,6 +532,13 @@ class SupportTicketController extends Controller
                 elseif ($user->role === 'PWDMember') {
                     $ticket->update(['status' => 'waiting_for_reply']);
                 }
+            }
+
+            // Broadcast ticket status update via WebSocket
+            try {
+                WebSocketBroadcastService::broadcastTicketStatusUpdate($ticket->id, $ticket->status);
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::error('WebSocket broadcast error: ' . $e->getMessage());
             }
 
             // Create notification if admin or frontdesk is replying to PWD member

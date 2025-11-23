@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { 
   Box, 
   Typography, 
@@ -75,6 +76,7 @@ const STORAGE_BASE_URL = 'http://192.168.18.25:8000/storage';
 
 function PWDRecords() {
   const { currentUser } = useAuth();
+  const location = useLocation();
   const [tab, setTab] = React.useState(0);
   const [showFilters, setShowFilters] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -113,6 +115,13 @@ function PWDRecords() {
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState('');
   const [previewFileName, setPreviewFileName] = useState('');
+  
+  // Rejection modal state
+  const [rejectionModalOpen, setRejectionModalOpen] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [customReason, setCustomReason] = useState('');
+  const [rejectionRemarks, setRejectionRemarks] = useState('');
+  const [rejectionConfirmationOpen, setRejectionConfirmationOpen] = useState(false);
     
   // Toast notifications will be used instead of modals
 
@@ -265,6 +274,31 @@ function PWDRecords() {
       fetchDocumentTypes();
     }, [currentUser]);
 
+    // Handle notification navigation - auto-open specific application
+    useEffect(() => {
+      if (location.state?.notificationItem) {
+        const notificationItem = location.state.notificationItem;
+        
+        // If it's a pending application notification, open that application
+        if (notificationItem.type === 'pending_application' && notificationItem.applicationID) {
+          // Wait for applications to load, then find and open the specific application
+          const timer = setTimeout(() => {
+            const app = applications.find(a => a.applicationID === notificationItem.applicationID);
+            if (app) {
+              // Switch to pending applications tab
+              setTab(1);
+              // Open the application details
+              handleViewDetails(app);
+              // Clear the state to prevent re-opening on refresh
+              window.history.replaceState({}, document.title);
+            }
+          }, 500);
+          
+          return () => clearTimeout(timer);
+        }
+      }
+    }, [location.state, applications]);
+
     const approveDelayRef = React.useRef(null);
     const [approving, setApproving] = useState(false);
 
@@ -350,14 +384,96 @@ function PWDRecords() {
     };
 
     const handleRejectApplication = async (applicationId) => {
-      const remarks = prompt('Please provide a reason for rejection:');
-      if (!remarks) return;
+      const application = applications.find(app => app.applicationID === applicationId);
+      if (!application) return;
 
+      // Set the selected application and open rejection modal
+      setSelectedApplication(application);
+      setRejectionModalOpen(true);
+      setRejectionReason('');
+      setCustomReason('');
+      setRejectionRemarks('');
+    };
+
+    const handleRejectSubmit = () => {
+      if (!rejectionReason) {
+        toastService.error('Please select a rejection reason.');
+        return;
+      }
+      
+      if (rejectionReason === 'other' && !customReason.trim()) {
+        toastService.error('Please provide a custom rejection reason.');
+        return;
+      }
+      
+      if (!rejectionRemarks.trim()) {
+        toastService.error('Please provide remarks for the rejection.');
+        return;
+      }
+      
+      // Close rejection modal and show confirmation
+      setRejectionModalOpen(false);
+      setRejectionConfirmationOpen(true);
+    };
+    
+    // Get formatted rejection reason for display
+    const getFormattedRejectionReason = () => {
+      if (!rejectionReason) return '';
+      
+      const reasonMap = {
+        'incomplete_information': 'Incomplete Information',
+        'incorrect_information': 'Incorrect Information',
+        'does_not_meet_criteria': 'Does Not Meet Criteria',
+        'other': customReason || 'Other'
+      };
+      
+      return reasonMap[rejectionReason] || rejectionReason;
+    };
+    
+    // Generate preview message (same as email)
+    const getPreviewMessage = () => {
+      if (!selectedApplication || !rejectionReason) return '';
+      
+      const formattedReason = getFormattedRejectionReason();
+      const refNumber = selectedApplication.referenceNumber || 'N/A';
+      const frontendUrl = window.location.origin;
+      
+      return `Dear ${selectedApplication.firstName} ${selectedApplication.lastName},
+
+We regret to inform you that your PWD (Persons with Disabilities) application has been reviewed and rejected by the Cabuyao PDAO (Persons with Disabilities Affairs Office).
+
+Your Application Reference Number: ${refNumber}
+
+Rejection Reason: ${formattedReason}
+
+Remarks/Instructions:
+${rejectionRemarks || '(No additional remarks provided)'}
+
+Your application data and submitted documents have been retained. You do not need to re-apply from scratch.
+
+You can check your application status and re-upload documents at:
+${frontendUrl}/check-status/${refNumber}
+
+Thank you for your interest in Cabuyao PDAO RMS.`;
+    };
+
+    const handleRejectConfirm = async () => {
+      if (!selectedApplication) return;
+      
+      setRejectionConfirmationOpen(false);
+      
       try {
-        await applicationService.updateStatus(applicationId, {
-          status: 'Rejected',
-          remarks: remarks
-        });
+        const rejectionData = {
+          remarks: rejectionRemarks,
+          rejectionReason: rejectionReason
+        };
+        
+        // If "Other" is selected, include custom reason
+        if (rejectionReason === 'other' && customReason.trim()) {
+          rejectionData.customReason = customReason.trim();
+        }
+
+        await api.post(`/applications/${selectedApplication.applicationID}/reject`, rejectionData);
 
         // Refresh the applications list
         const data = await applicationService.getByStatus('Pending Admin Approval');
@@ -367,7 +483,13 @@ function PWDRecords() {
           return bTime - aTime;
         });
         setApplications(sortedData);
-        toastService.success('Application rejected successfully!');
+        toastService.success('Application rejected successfully! Email notification sent to applicant.');
+        
+        // Reset rejection state
+        setRejectionReason('');
+        setCustomReason('');
+        setRejectionRemarks('');
+        setSelectedApplication(null);
       } catch (err) {
         console.error('Error rejecting application:', err);
         toastService.error('Failed to reject application: ' + (err.message || 'Unknown error'));
@@ -1034,12 +1156,21 @@ function PWDRecords() {
       return age;
     };
 
+    // Helper function to convert text to proper case
+    const toProperCase = (text) => {
+      if (!text) return '';
+      return text.split(' ').map(word => {
+        if (!word) return '';
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      }).join(' ');
+    };
+
     // Transform PWD members data for display
     const rows = useMemo(() => {
       return pwdMembers.map((member, index) => ({
         id: member.id,
         pwdId: `PWD-${member.userID}`,
-        name: `${member.firstName} ${member.lastName} ${member.suffix || ''}`.trim(),
+        name: `${toProperCase(member.firstName || '')} ${toProperCase(member.lastName || '')} ${member.suffix || ''}`.trim(),
         age: getAgeFromBirthDate(member.birthDate),
         barangay: member.barangay || 'Not specified',
         disability: member.disabilityType || 'Not specified',
@@ -1958,7 +2089,16 @@ function PWDRecords() {
                                   {row.applicationID}
                                 </TableCell>
                                 <TableCell sx={{ color: '#000000', fontWeight: 500, fontSize: '0.8rem', borderBottom: '1px solid #E0E0E0', py: 2, px: 2, width: '180px', minWidth: '180px' }}>
-                                  {`${row.firstName} ${row.lastName} ${row.suffix || ''}`.trim()}
+                                  {(() => {
+                                    const toProperCase = (text) => {
+                                      if (!text) return '';
+                                      return text.split(' ').map(word => {
+                                        if (!word) return '';
+                                        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+                                      }).join(' ');
+                                    };
+                                    return `${toProperCase(row.firstName || '')} ${toProperCase(row.lastName || '')} ${row.suffix || ''}`.trim();
+                                  })()}
                                 </TableCell>
                                 <TableCell sx={{ color: '#000000', fontWeight: 500, fontSize: '0.8rem', borderBottom: '1px solid #E0E0E0', py: 2, px: 2, width: '200px', minWidth: '200px' }}>
                                   {row.email}
@@ -3141,6 +3281,193 @@ function PWDRecords() {
              </Typography>
            </DialogActions>
          </Dialog>
+
+        {/* Rejection Reason Dialog */}
+        <Dialog
+          open={rejectionModalOpen}
+          onClose={() => setRejectionModalOpen(false)}
+          maxWidth="md"
+          fullWidth
+          PaperProps={{
+            sx: {
+              zIndex: 1400 // Higher than application details modal
+            }
+          }}
+        >
+          <DialogTitle sx={{ bgcolor: '#E74C3C', color: '#FFFFFF', fontWeight: 'bold' }}>
+            Rejection Details
+          </DialogTitle>
+          <DialogContent 
+            sx={{ 
+              mt: 2,
+              maxHeight: '60vh',
+              overflowY: 'auto',
+              overflowX: 'hidden'
+            }}
+          >
+            <FormControl fullWidth sx={{ mb: 3 }}>
+              <InputLabel>Rejection Reason *</InputLabel>
+              <Select
+                value={rejectionReason}
+                onChange={(e) => {
+                  setRejectionReason(e.target.value);
+                  setCustomReason(''); // Reset custom reason when reason changes
+                }}
+                label="Rejection Reason *"
+              >
+                <MenuItem value="incomplete_information">Incomplete Information</MenuItem>
+                <MenuItem value="incorrect_information">Incorrect Information</MenuItem>
+                <MenuItem value="does_not_meet_criteria">Does Not Meet Criteria</MenuItem>
+                <MenuItem value="other">Other</MenuItem>
+              </Select>
+            </FormControl>
+
+            {/* Custom Reason Input (only for "Other") */}
+            {rejectionReason === 'other' && (
+              <TextField
+                fullWidth
+                label="Custom Reason"
+                value={customReason}
+                onChange={(e) => setCustomReason(e.target.value)}
+                required
+                sx={{ mb: 3 }}
+                InputLabelProps={{
+                  shrink: true
+                }}
+                placeholder="Please specify the rejection reason..."
+              />
+            )}
+
+            <TextField
+              fullWidth
+              multiline
+              rows={4}
+              label="Remarks"
+              value={rejectionRemarks}
+              onChange={(e) => setRejectionRemarks(e.target.value)}
+              required
+              sx={{ mb: 3 }}
+              InputLabelProps={{
+                shrink: true
+              }}
+              placeholder="Please provide detailed remarks for the rejection..."
+            />
+
+            {/* Preview Message */}
+            {rejectionReason && rejectionRemarks.trim() && (
+              <Box sx={{ 
+                mt: 3, 
+                p: 2, 
+                bgcolor: '#F8F9FA', 
+                borderRadius: 1, 
+                border: '1px solid #DEE2E6' 
+              }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
+                  📧 Email Preview (This is what will be sent to the applicant):
+                </Typography>
+                <Box sx={{
+                  p: 2,
+                  bgcolor: '#FFFFFF',
+                  borderRadius: 1,
+                  border: '1px solid #E0E0E0',
+                  maxHeight: '300px',
+                  overflowY: 'auto',
+                  whiteSpace: 'pre-wrap',
+                  fontFamily: 'monospace',
+                  fontSize: '0.875rem',
+                  lineHeight: 1.6
+                }}>
+                  {getPreviewMessage()}
+                </Box>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ p: 2 }}>
+            <Button
+              onClick={() => setRejectionModalOpen(false)}
+              variant="outlined"
+              sx={{
+                borderColor: '#6C757D',
+                color: '#6C757D',
+                textTransform: 'none'
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRejectSubmit}
+              variant="contained"
+              sx={{
+                bgcolor: '#E74C3C',
+                textTransform: 'none',
+                fontWeight: 600,
+                '&:hover': {
+                  bgcolor: '#C0392B'
+                }
+              }}
+            >
+              Continue to Confirmation
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Rejection Confirmation Dialog */}
+        <Dialog
+          open={rejectionConfirmationOpen}
+          onClose={() => setRejectionConfirmationOpen(false)}
+          maxWidth="sm"
+          fullWidth
+        >
+          <DialogTitle sx={{ bgcolor: '#E74C3C', color: '#FFFFFF', fontWeight: 'bold' }}>
+            Confirm Rejection
+          </DialogTitle>
+          <DialogContent sx={{ mt: 2 }}>
+            <Typography variant="body1" sx={{ mb: 2 }}>
+              Are you sure you want to reject this application? This action cannot be undone.
+            </Typography>
+            <Box sx={{ p: 2, bgcolor: '#F8F9FA', borderRadius: 1 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+                Rejection Reason:
+              </Typography>
+              <Typography variant="body2" sx={{ mb: 2 }}>
+                {getFormattedRejectionReason()}
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600, mb: 1 }}>
+                Remarks:
+              </Typography>
+              <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                {rejectionRemarks}
+              </Typography>
+            </Box>
+          </DialogContent>
+          <DialogActions sx={{ p: 2 }}>
+            <Button
+              onClick={() => setRejectionConfirmationOpen(false)}
+              variant="outlined"
+              sx={{
+                borderColor: '#6C757D',
+                color: '#6C757D',
+                textTransform: 'none'
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRejectConfirm}
+              variant="contained"
+              sx={{
+                bgcolor: '#E74C3C',
+                textTransform: 'none',
+                fontWeight: 600,
+                '&:hover': {
+                  bgcolor: '#C0392B'
+                }
+              }}
+            >
+              Confirm Rejection
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* Global approval loading backdrop */}
         <Backdrop

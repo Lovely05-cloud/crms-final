@@ -79,12 +79,26 @@
             <p><strong>Important:</strong> You will be required to change this password on your first login for security purposes.</p>
         </div>
         
+        @if(isset($cardClaimDate))
+        <div class="highlight" style="background-color:#d1ecf1;border-left:4px solid #17a2b8;">
+            <h3>📅 PWD Card Claim Information</h3>
+            <p><strong>Important Notice:</strong> Your PWD ID card will be ready for claiming in <strong>2 weeks (10 business days)</strong> from the date of approval.</p>
+            <p style="font-size: 18px; font-weight: bold; color: #17a2b8; margin-top: 10px;">
+                📍 Card Available for Claim: <strong>{{ $cardClaimDate }}</strong>
+            </p>
+            <p style="margin-top: 10px;">Please visit the Cabuyao PDAO office on or after this date to claim your PWD ID card. Remember to bring a valid ID for verification.</p>
+        </div>
+        @endif
+        
         <h3>🚀 What's Next?</h3>
         <ul>
             <li>Access your PWD member dashboard</li>
             <li>View important announcements</li>
             <li>Access support services</li>
             <li>Track your benefits and services</li>
+            @if(isset($cardClaimDate))
+            <li>Claim your PWD ID card on <strong>{{ $cardClaimDate }}</strong></li>
+            @endif
         </ul>
         
         <div style="text-align: center;">

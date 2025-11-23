@@ -677,9 +677,16 @@ function AdminDashboard() {
       try {
         setDisabilityLoading(true);
         
-        // Fetch PWD members data
-        const membersResponse = await pwdMemberService.getAll();
-        const members = membersResponse?.data?.members || membersResponse?.data || (Array.isArray(membersResponse) ? membersResponse : []) || [];
+        // Fetch PWD members data - use silent mode to avoid toast spam
+        let members = [];
+        try {
+          const membersResponse = await pwdMemberService.getAll({}, { silent: true });
+          members = membersResponse?.data?.members || membersResponse?.data || (Array.isArray(membersResponse) ? membersResponse : []) || [];
+        } catch (memberError) {
+          // Silently handle error - don't show toast for dashboard background fetches
+          console.warn('Could not fetch members for disability distribution:', memberError);
+          members = [];
+        }
         
         // Calculate disability type distribution
         const disabilityCounts = {};
@@ -710,9 +717,9 @@ function AdminDashboard() {
           setDisabilityDistribution(distribution);
         }
       } catch (error) {
-        console.error('Error fetching disability distribution:', error);
+        console.error('Error processing disability distribution:', error);
         setDisabilityDistribution([
-          { name: 'Error loading data', value: 0, fullName: 'Error loading data' }
+          { name: 'No data available', value: 0, fullName: 'No data available' }
         ]);
       } finally {
         setDisabilityLoading(false);

@@ -1,5 +1,6 @@
 // src/components/dashboard/BarangayPresidentDashboard.js
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -24,7 +25,11 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemIcon
+  ListItemIcon,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import {
   Dashboard,
@@ -66,6 +71,7 @@ import {
 
 function BarangayPresidentDashboard() {
   const { currentUser } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState({
     totalPWDMembers: 0,
     pendingApplications: 0,
@@ -76,6 +82,8 @@ function BarangayPresidentDashboard() {
   const [recentAnnouncements, setRecentAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [metricModalOpen, setMetricModalOpen] = useState(false);
+  const [selectedMetric, setSelectedMetric] = useState(null);
 
   // Format date as MM/DD/YYYY
   const formatDateMMDDYYYY = (dateString) => {
@@ -88,6 +96,60 @@ function BarangayPresidentDashboard() {
     const year = date.getFullYear();
     
     return `${month}/${day}/${year}`;
+  };
+
+  // Metric descriptions
+  const metricDescriptions = {
+    totalPWDMembers: {
+      title: 'Total PWD Members',
+      description: 'This metric represents the total number of Persons with Disabilities (PWD) who are registered members in your barangay. This includes all PWD members regardless of their application status, whether they have pending, approved, or completed applications.',
+      details: [
+        'Includes all registered PWD members in your barangay',
+        'Counts members from all application statuses',
+        'Updated in real-time as new members register',
+        'Helps track the overall PWD community size in your area'
+      ]
+    },
+    pendingApplications: {
+      title: 'Pending Applications',
+      description: 'This metric shows the number of PWD registration applications that are currently awaiting your review and approval. These are applications that have been submitted by applicants but have not yet been processed by the barangay president.',
+      details: [
+        'Applications waiting for barangay president review',
+        'Requires your action to approve or reject',
+        'Applications are sorted by submission date (newest first)',
+        'Click "View All" to see detailed application information'
+      ]
+    },
+    approvedApplications: {
+      title: 'Approved Applications',
+      description: 'This metric displays the total number of PWD registration applications that have been successfully approved by the barangay president. These applications have passed the initial barangay-level review and may be forwarded to the next approval stage.',
+      details: [
+        'Applications that have been approved by you',
+        'May be forwarded to admin/staff for final processing',
+        'Represents successful PWD registrations in your barangay',
+        'Contributes to the total PWD members count'
+      ]
+    },
+    activeMembers: {
+      title: 'Active Members',
+      description: 'This metric indicates the number of PWD members who are currently active in the system. Active members are those who have completed their registration, have valid PWD ID cards, and are actively participating in PWD programs and benefits.',
+      details: [
+        'Members with completed registrations and valid PWD IDs',
+        'Eligible for PWD benefits and programs',
+        'Members who are actively engaged in PWD services',
+        'Updated based on member status and card validity'
+      ]
+    }
+  };
+
+  const handleMetricClick = (metricKey) => {
+    setSelectedMetric(metricKey);
+    setMetricModalOpen(true);
+  };
+
+  const handleCloseMetricModal = () => {
+    setMetricModalOpen(false);
+    setSelectedMetric(null);
   };
 
   useEffect(() => {
@@ -217,7 +279,20 @@ function BarangayPresidentDashboard() {
         {/* Statistics Cards */}
         <Grid container spacing={{ xs: 1.5, sm: 2, md: 3 }} sx={{ mb: 3 }}>
           <Grid item xs={6} sm={4} md={3}>
-            <Card sx={{ ...cardStyles, height: { xs: '120px', sm: '140px', md: '160px' } }}>
+            <Card 
+              onClick={() => handleMetricClick('totalPWDMembers')}
+              sx={{ 
+                ...cardStyles, 
+                height: { xs: '120px', sm: '140px', md: '160px' },
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: '0 8px 16px rgba(0,0,0,0.15)',
+                  borderColor: '#3498DB'
+                }
+              }}
+            >
               <CardContent sx={{ 
                 textAlign: 'center', 
                 py: { xs: 1.5, sm: 2, md: 3 },
@@ -258,7 +333,20 @@ function BarangayPresidentDashboard() {
             </Card>
           </Grid>
           <Grid item xs={6} sm={4} md={3}>
-            <Card sx={{ ...cardStyles, height: { xs: '120px', sm: '140px', md: '160px' } }}>
+            <Card 
+              onClick={() => handleMetricClick('pendingApplications')}
+              sx={{ 
+                ...cardStyles, 
+                height: { xs: '120px', sm: '140px', md: '160px' },
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: '0 8px 16px rgba(0,0,0,0.15)',
+                  borderColor: '#F39C12'
+                }
+              }}
+            >
               <CardContent sx={{ 
                 textAlign: 'center', 
                 py: { xs: 1.5, sm: 2, md: 3 },
@@ -299,7 +387,20 @@ function BarangayPresidentDashboard() {
             </Card>
           </Grid>
           <Grid item xs={6} sm={4} md={3}>
-            <Card sx={{ ...cardStyles, height: { xs: '120px', sm: '140px', md: '160px' } }}>
+            <Card 
+              onClick={() => handleMetricClick('approvedApplications')}
+              sx={{ 
+                ...cardStyles, 
+                height: { xs: '120px', sm: '140px', md: '160px' },
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: '0 8px 16px rgba(0,0,0,0.15)',
+                  borderColor: '#27AE60'
+                }
+              }}
+            >
               <CardContent sx={{ 
                 textAlign: 'center', 
                 py: { xs: 1.5, sm: 2, md: 3 },
@@ -340,7 +441,20 @@ function BarangayPresidentDashboard() {
             </Card>
           </Grid>
           <Grid item xs={6} sm={4} md={3}>
-            <Card sx={{ ...cardStyles, height: { xs: '120px', sm: '140px', md: '160px' } }}>
+            <Card 
+              onClick={() => handleMetricClick('activeMembers')}
+              sx={{ 
+                ...cardStyles, 
+                height: { xs: '120px', sm: '140px', md: '160px' },
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: '0 8px 16px rgba(0,0,0,0.15)',
+                  borderColor: '#E74C3C'
+                }
+              }}
+            >
               <CardContent sx={{ 
                 textAlign: 'center', 
                 py: { xs: 1.5, sm: 2, md: 3 },
@@ -397,6 +511,7 @@ function BarangayPresidentDashboard() {
                   <Button
                     variant="outlined"
                     size="medium"
+                    onClick={() => navigate('/barangay-president-pwd-records')}
                     sx={{ 
                       borderColor: '#3498DB', 
                       color: '#3498DB',
@@ -524,6 +639,108 @@ function BarangayPresidentDashboard() {
           </Grid>
         </Grid>
       </Box>
+
+      {/* Metric Description Modal */}
+      <Dialog
+        open={metricModalOpen}
+        onClose={handleCloseMetricModal}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
+          }
+        }}
+      >
+        {selectedMetric && metricDescriptions[selectedMetric] && (
+          <>
+            <DialogTitle sx={{ 
+              bgcolor: '#F8F9FA',
+              borderBottom: '2px solid #E0E0E0',
+              pb: 2,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2
+            }}>
+              <Box sx={{ 
+                width: 48, 
+                height: 48, 
+                borderRadius: '50%', 
+                bgcolor: '#3498DB15',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                {selectedMetric === 'totalPWDMembers' && <People sx={{ color: '#3498DB', fontSize: 28 }} />}
+                {selectedMetric === 'pendingApplications' && <Schedule sx={{ color: '#F39C12', fontSize: 28 }} />}
+                {selectedMetric === 'approvedApplications' && <CheckCircle sx={{ color: '#27AE60', fontSize: 28 }} />}
+                {selectedMetric === 'activeMembers' && <TrendingUp sx={{ color: '#E74C3C', fontSize: 28 }} />}
+              </Box>
+              <Box>
+                <Typography variant="h5" sx={{ fontWeight: 700, color: '#2C3E50', mb: 0.5 }}>
+                  {metricDescriptions[selectedMetric].title}
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#7F8C8D', fontWeight: 600 }}>
+                  Current Value: {stats[selectedMetric]}
+                </Typography>
+              </Box>
+            </DialogTitle>
+            <DialogContent sx={{ p: 3 }}>
+              <Typography variant="body1" sx={{ color: '#34495E', mb: 3, lineHeight: 1.8 }}>
+                {metricDescriptions[selectedMetric].description}
+              </Typography>
+              
+              <Divider sx={{ my: 2 }} />
+              
+              <Typography variant="h6" sx={{ fontWeight: 600, color: '#2C3E50', mb: 2 }}>
+                Key Details:
+              </Typography>
+              <List sx={{ pl: 0 }}>
+                {metricDescriptions[selectedMetric].details.map((detail, index) => (
+                  <ListItem key={index} sx={{ pl: 0, py: 1 }}>
+                    <ListItemIcon sx={{ minWidth: 32 }}>
+                      <Box sx={{ 
+                        width: 8, 
+                        height: 8, 
+                        borderRadius: '50%', 
+                        bgcolor: '#3498DB',
+                        mt: 0.5
+                      }} />
+                    </ListItemIcon>
+                    <ListItemText 
+                      primary={detail}
+                      primaryTypographyProps={{
+                        variant: 'body2',
+                        color: '#34495E',
+                        sx: { lineHeight: 1.6 }
+                      }}
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            </DialogContent>
+            <DialogActions sx={{ p: 2.5, bgcolor: '#F8F9FA', borderTop: '1px solid #E0E0E0' }}>
+              <Button
+                onClick={handleCloseMetricModal}
+                variant="contained"
+                sx={{
+                  bgcolor: '#3498DB',
+                  color: 'white',
+                  textTransform: 'none',
+                  px: 3,
+                  py: 1,
+                  '&:hover': {
+                    bgcolor: '#2980B9'
+                  }
+                }}
+              >
+                Close
+              </Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
     </Box>
   );
 }

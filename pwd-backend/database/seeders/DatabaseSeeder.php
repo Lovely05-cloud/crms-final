@@ -38,5 +38,8 @@ class DatabaseSeeder extends Seeder
 
         // Uncomment the line below to generate 1000 sample PWD members
         // $this->call([SamplePWDMemberSeeder::class]);
+
+        // Uncomment the line below to add 400 dispersed data entries across the system
+        // $this->call([Add400DispersedDataSeeder::class]);
     }
 }

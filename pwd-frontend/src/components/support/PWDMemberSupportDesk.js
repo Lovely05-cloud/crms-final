@@ -184,7 +184,7 @@ const PWDMemberSupportDesk = () => {
 
   // Handle connection status changes
   const handleConnectionStatus = (data) => {
-    console.log('Connection status:', data);
+    // Silent status update - no console logs
     setConnectionStatus(data.status);
   };
 
@@ -232,8 +232,8 @@ const PWDMemberSupportDesk = () => {
     
     fetchTickets();
     
-    // Initialize WebSocket connection
-    initializeWebSocket();
+    // Initialize WebSocket connection - DISABLED
+    // initializeWebSocket();
     
     // Cleanup on unmount
     return () => {

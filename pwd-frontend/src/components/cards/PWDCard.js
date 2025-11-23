@@ -175,7 +175,6 @@ const fetchImageDataUrl = async (url) => {
 
 function PWDCard() {
   const { currentUser } = useAuth();
-  const [pwdMembers, setPwdMembers] = useState([]);
   const [selectedMember, setSelectedMember] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -234,9 +233,11 @@ function PWDCard() {
     has_more: false
   });
   
-  // Debounced search
+  // Search - client-side filtering (like BarangayPresidentPWDCard)
   const [searchTerm, setSearchTerm] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  
+  // Store all members for client-side filtering
+  const [allPwdMembers, setAllPwdMembers] = useState([]);
   
   const [filters, setFilters] = useState({
     search: '',
@@ -301,25 +302,17 @@ function PWDCard() {
     return 'claimed';
   };
 
-  // Debounce search input
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchTerm);
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
-
-  // Reset to page 1 when filters change
+  // Reset to page 1 when search term changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, filters.barangay, filters.disability, filters.status, filters.ageRange]);
+  }, [searchTerm]);
 
   // Reset card flip when member selection changes
   useEffect(() => {
     setIsCardFlipped(false);
   }, [selectedMember]);
 
-  // Fetch PWD members from API with pagination and filters
+  // Fetch all PWD members from API (for client-side filtering)
   const fetchPwdMembers = async (page = currentPage, showLoading = false) => {
     try {
       // Only show loading animation on initial load or when explicitly requested
@@ -328,45 +321,13 @@ function PWDCard() {
       }
       setError(null);
       
-      // Build API parameters
+      // Fetch all members without pagination for client-side filtering
       const params = {
-        page,
-        per_page: perPage
+        per_page: 10000 // Large number to get all members
       };
-      
-      // Add search filter
-      if (debouncedSearch) {
-        params.search = debouncedSearch;
-      }
-      
-      // Add other filters
-      if (filters.barangay) {
-        params.barangay = filters.barangay;
-      }
-      
-      if (filters.disability) {
-        params.disability_type = filters.disability;
-      }
-      
-      if (filters.status) {
-        params.status = filters.status;
-      }
       
       const response = await pwdMemberService.getAll(params);
       const members = response.data || response.members || [];
-      
-      // Update pagination metadata
-      if (response.pagination) {
-        setPagination(response.pagination);
-      } else {
-        // Fallback: estimate pagination from response
-        const total = response.count || members.length;
-        setPagination({
-          total,
-          last_page: Math.ceil(total / perPage),
-          has_more: page * perPage < total
-        });
-      }
       
       // Transform the data to match our expected format
       const transformedMembers = members.map((member, index) => {
@@ -412,26 +373,12 @@ function PWDCard() {
         };
       });
       
-      // Set the members from API (no fallback to mock data)
-      setPwdMembers(transformedMembers);
+      // Store all members for client-side filtering
+      setAllPwdMembers(transformedMembers);
       
-      // Handle selected member preservation when filters change
-      if (transformedMembers.length > 0) {
-        if (!selectedMember) {
-          // No member selected, select the first one
-          setSelectedMember(transformedMembers[0].id);
-        } else {
-          // Check if currently selected member is still in the filtered results
-          const isSelectedMemberInResults = transformedMembers.some(m => m.id === selectedMember);
-          if (!isSelectedMemberInResults) {
-            // Selected member is not in filtered results, select the first member
-            setSelectedMember(transformedMembers[0].id);
-          }
-          // If selected member is still in results, keep it selected (no change needed)
-        }
-      } else {
-        // No members in filtered results, clear selection
-        setSelectedMember(null);
+      // Auto-select first member if none selected
+      if (!selectedMember && transformedMembers.length > 0) {
+        setSelectedMember(transformedMembers[0].id);
       }
     } catch (err) {
       console.error('Error fetching PWD members:', err);
@@ -453,22 +400,52 @@ function PWDCard() {
     }
   };
 
-  // Load PWD members when page or filters change
+  // Track previous filter values to detect changes (excluding searchTerm and page)
+  const prevFilterValuesRef = useRef({
+    barangay: null,
+    disability: null,
+    status: null
+  });
+
+  // Load PWD members when filters change (not on page change - that's handled client-side)
   useEffect(() => {
-    // Don't show loading animation for search/filter changes, only for initial load
-    fetchPwdMembers(currentPage, false);
-  }, [currentPage, debouncedSearch, filters.barangay, filters.disability, filters.status]);
+    const prev = prevFilterValuesRef.current;
+    const filterChanged = 
+      prev.barangay !== filters.barangay ||
+      prev.disability !== filters.disability ||
+      prev.status !== filters.status;
+    
+    // Update refs
+    prevFilterValuesRef.current = {
+      barangay: filters.barangay,
+      disability: filters.disability,
+      status: filters.status
+    };
+    
+    // If any filter changed, reset to page 1 and fetch
+    if (filterChanged) {
+      setCurrentPage(1);
+      fetchPwdMembers(1, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.barangay, filters.disability, filters.status]);
+
+  // Initial load
+  useEffect(() => {
+    fetchPwdMembers(1, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch ID picture from member documents when member is selected
   useEffect(() => {
-    if (!selectedMember || pwdMembers.length === 0) {
+    if (!selectedMember || allPwdMembers.length === 0) {
       setIdPictureUrl(null);
       return;
     }
     
     const fetchIdPicture = async () => {
       try {
-        const member = pwdMembers.find(m => m.id === selectedMember);
+        const member = allPwdMembers.find(m => m.id === selectedMember);
         if (!member || !member.memberId) {
           setIdPictureUrl(null);
           return;
@@ -611,15 +588,15 @@ function PWDCard() {
     };
     
     fetchIdPicture();
-  }, [selectedMember, pwdMembers]);
+  }, [selectedMember, allPwdMembers]);
 
   // Generate QR code for selected member
   useEffect(() => {
-    if (!selectedMember || pwdMembers.length === 0) return;
+    if (!selectedMember || allPwdMembers.length === 0) return;
     
     const generateQRCode = async () => {
       try {
-        const member = pwdMembers.find(m => m.id === selectedMember);
+        const member = allPwdMembers.find(m => m.id === selectedMember);
         if (!member) return;
         
         const qrDataURL = await QRCodeService.generateMemberQRCode(member);
@@ -630,7 +607,7 @@ function PWDCard() {
     };
     
     generateQRCode();
-  }, [selectedMember, pwdMembers]);
+  }, [selectedMember, allPwdMembers]);
 
 
   const handleDownloadPDF = async () => {
@@ -1376,102 +1353,124 @@ function PWDCard() {
               color: #111827;
             }
             .card {
-              width: 3.35in;
-              height: 2.12in;
-              border: 2px solid #111827;
-              border-radius: 16px;
-              padding: 14px;
+              width: 3in;
+              height: 2in;
+              border: 1px solid #111827;
+              border-radius: 0;
+              padding: 0.05in;
               margin: 0 auto 24px;
               display: flex;
               flex-direction: column;
-              gap: 10px;
+              overflow: hidden;
+              box-sizing: border-box;
+              position: relative;
             }
             .card-header {
               display: flex;
               justify-content: space-between;
               align-items: flex-start;
+              margin-bottom: 0.05in;
+              height: 0.28in;
             }
             .card-header-text {
-              flex: 1;
-              text-align: center;
-              line-height: 1.2;
+              text-align: left;
+              line-height: 1.1;
+              padding-left: 0.05in;
             }
             .card-header-text .title {
-              font-size: 12px;
+              font-size: 6pt;
               font-weight: 700;
-              letter-spacing: 0.08em;
+              margin-bottom: 0.01in;
             }
             .card-header-text .province {
-              font-size: 10px;
-              font-weight: 600;
+              font-size: 5pt;
+              font-weight: 400;
+              margin-bottom: 0.01in;
             }
             .card-header-text .city {
-              font-size: 12px;
-              font-weight: 800;
-              letter-spacing: 0.1em;
+              font-size: 6.5pt;
+              font-weight: 700;
             }
             .logo-group {
               display: flex;
-              gap: 8px;
+              gap: 0.04in;
               align-items: center;
             }
             .logo-circle {
-              width: 36px;
-              height: 36px;
+              width: 0.28in;
+              height: 0.28in;
               border-radius: 50%;
-              border: 2px solid #1f2937;
+              border: 0.005in solid #1f2937;
               display: flex;
               align-items: center;
               justify-content: center;
-              font-size: 8px;
+              font-size: 3pt;
               font-weight: 700;
               text-align: center;
               line-height: 1.1;
-              padding: 2px;
+              flex-shrink: 0;
             }
             .logo-pdao {
-              background: #0b87ac;
+              background: #0038a8;
               color: #ffffff;
-              border-color: #0b87ac;
-              font-size: 18px;
+              border-color: #0038a8;
+              font-size: 8pt;
             }
             .front-body {
               display: flex;
-              gap: 14px;
+              gap: 0.05in;
               flex: 1;
+              min-height: 0;
+              overflow: hidden;
+              margin-top: 0.05in;
             }
             .front-left {
-              flex: 1;
+              width: 55%;
+              min-width: 0;
+              overflow: hidden;
+              padding-left: 0.06in;
+            }
+            .field {
+              margin-bottom: 0.08in;
             }
             .field-label {
-              font-size: 8px;
+              font-size: 4.5pt;
               font-weight: 700;
-              letter-spacing: 0.08em;
+              margin-bottom: 0.01in;
             }
             .field-value {
-              font-size: 11px;
+              font-size: 6pt;
               font-weight: 700;
-              border-bottom: 1px solid #111827;
-              padding-bottom: 4px;
-              margin-bottom: 12px;
+              border-bottom: 0.003in solid #111827;
+              padding-bottom: 0.01in;
+              word-wrap: break-word;
+              overflow-wrap: break-word;
+              word-break: break-word;
+              max-width: 85%;
+              line-height: 1.2;
             }
             .front-right {
-              width: 38%;
+              width: 35%;
               border-left: 1px solid #d1d5db;
-              padding-left: 12px;
+              padding-left: 0.05in;
               display: flex;
               flex-direction: column;
-              gap: 12px;
+              gap: 0.05in;
+              min-width: 0;
+              overflow: hidden;
             }
             .photo-frame {
-              flex: 1;
-              border: 1px solid #111827;
-              border-radius: 8px;
+              width: 65%;
+              aspect-ratio: 1;
+              max-width: 0.85in;
+              border: 0.01in solid #111827;
+              border-radius: 0;
               background: #f3f4f6;
               display: flex;
               align-items: center;
               justify-content: center;
               overflow: hidden;
+              margin: 0 auto;
             }
             .photo-frame img {
               width: 100%;
@@ -1479,7 +1478,7 @@ function PWDCard() {
               object-fit: cover;
             }
             .photo-placeholder-text {
-              font-size: 12px;
+              font-size: 5pt;
               font-weight: 600;
               color: #9ca3af;
             }
@@ -1487,14 +1486,20 @@ function PWDCard() {
               display: flex;
               justify-content: space-between;
               align-items: center;
+              position: absolute;
+              bottom: 0.23in;
+              left: 0.1in;
+              right: 0.1in;
+              width: calc(100% - 0.2in);
             }
             .flag {
               position: relative;
-              width: 60px;
-              height: 36px;
-              border: 1px solid #111827;
-              border-radius: 4px;
+              width: 0.38in;
+              height: 0.23in;
+              border: 0.005in solid #111827;
+              border-radius: 0;
               overflow: hidden;
+              flex-shrink: 0;
             }
             .flag .triangle {
               position: absolute;
@@ -1503,63 +1508,73 @@ function PWDCard() {
               width: 0;
               height: 0;
               border-style: solid;
-              border-width: 18px 0 18px 24px;
+              border-width: 0.115in 0 0.115in 0.126in;
               border-color: transparent transparent transparent #ffffff;
               z-index: 2;
             }
             .flag .stripe.blue {
               position: absolute;
               top: 0;
-              left: 24px;
-              width: 36px;
-              height: 18px;
+              left: 0.126in;
+              width: 0.254in;
+              height: 0.115in;
               background: #0038a8;
             }
             .flag .stripe.red {
               position: absolute;
               bottom: 0;
-              left: 24px;
-              width: 36px;
-              height: 18px;
+              left: 0.126in;
+              width: 0.254in;
+              height: 0.115in;
               background: #ce1126;
             }
             .flag .sun {
               position: absolute;
-              left: 10px;
+              left: 0.067in;
               top: 50%;
               transform: translateY(-50%);
-              width: 12px;
-              height: 12px;
+              width: 0.03in;
+              height: 0.03in;
               background: #fcd116;
               border-radius: 50%;
               z-index: 3;
             }
             .bagong {
-              font-size: 11px;
-              font-weight: 800;
-              letter-spacing: 0.2em;
+              font-size: 5.5pt;
+              font-weight: 700;
               color: #b71c1c;
+              flex-shrink: 0;
             }
             .tagline {
+              position: absolute;
+              bottom: 0.05in;
+              left: 50%;
+              transform: translateX(-50%);
               text-align: center;
-              font-size: 10px;
-              font-weight: 800;
-              letter-spacing: 0.08em;
+              font-size: 4.5pt;
+              font-weight: 700;
+              letter-spacing: 0.05em;
+              width: 100%;
             }
             .back-body {
               display: flex;
-              gap: 14px;
+              gap: 0.05in;
               flex: 1;
+              margin-top: 0.2in;
+              min-height: 0;
+              overflow: hidden;
             }
             .qr-box {
-              width: 45%;
-              border: 1px solid #cbd5f5;
+              width: 50%;
+              border: 0.01in solid #cbd5f5;
               background: #f3f4f6;
-              border-radius: 12px;
+              border-radius: 0;
               display: flex;
               align-items: center;
               justify-content: center;
-              padding: 8px;
+              padding: 0.05in;
+              min-width: 0;
+              overflow: hidden;
             }
             .qr-box img {
               width: 100%;
@@ -1567,7 +1582,7 @@ function PWDCard() {
               object-fit: contain;
             }
             .qr-placeholder-text {
-              font-size: 14px;
+              font-size: 8pt;
               font-weight: 600;
               color: #9ca3af;
             }
@@ -1575,18 +1590,40 @@ function PWDCard() {
               flex: 1;
               display: flex;
               flex-direction: column;
-              gap: 10px;
+              gap: 0.05in;
+              min-width: 0;
+              overflow: hidden;
+              padding-left: 0.05in;
             }
             .detail-field .label {
-              font-size: 8px;
-              letter-spacing: 0.08em;
+              font-size: 4.5pt;
+              letter-spacing: 0.05em;
               font-weight: 700;
+              margin-bottom: 0.01in;
             }
             .detail-field .value {
-              font-size: 10px;
-              font-weight: 600;
-              border-bottom: 1px solid #111827;
-              padding-bottom: 4px;
+              font-size: 4pt;
+              font-weight: 400;
+              border-bottom: 0.003in solid #111827;
+              padding-bottom: 0.01in;
+              word-wrap: break-word;
+              overflow-wrap: break-word;
+              word-break: break-word;
+              max-width: 95%;
+              line-height: 1.3;
+              margin-bottom: 0.04in;
+            }
+            .detail-field {
+              min-width: 0;
+              overflow: hidden;
+            }
+            .detail-field-row {
+              display: flex;
+              gap: 0.05in;
+            }
+            .detail-field-row > div {
+              flex: 1;
+              min-width: 0;
             }
             @media print {
               body {
@@ -1624,9 +1661,9 @@ function PWDCard() {
                 </div>
               </div>
               <div class="front-right">
-                <div class="field">
+                <div class="field" style="text-align: center;">
                   <div class="field-label">ID NO.</div>
-                  <div class="field-value">${escapedIdNumber}</div>
+                  <div class="field-value" style="max-width: 100%; text-align: center;">${escapedIdNumber}</div>
                 </div>
                 <div class="photo-frame">
                   ${photoMarkup}
@@ -1646,7 +1683,7 @@ function PWDCard() {
           </div>
 
           <div class="card">
-            <div class="card-header" style="justify-content: flex-end;">
+            <div class="card-header" style="justify-content: flex-end; padding-right: 0.05in;">
               <div class="logo-group">
                 <div class="bagong">${escapedBagong}</div>
                 <div class="logo-circle">LUNGSOD<br/>NG<br/>CABUYAO<br/>2012</div>
@@ -1662,22 +1699,22 @@ function PWDCard() {
                   <div class="label">ADDRESS:</div>
                   <div class="value">${escapedAddress}</div>
                 </div>
-                <div class="detail-field" style="display:flex; gap:10px;">
-                  <div style="flex:1;">
+                <div class="detail-field-row">
+                  <div class="detail-field">
                     <div class="label">DATE OF BIRTH:</div>
                     <div class="value">${escapedDob}</div>
                   </div>
-                  <div style="flex:1;">
+                  <div class="detail-field">
                     <div class="label">DATE ISSUED:</div>
                     <div class="value">${escapedDateIssued}</div>
                   </div>
                 </div>
-                <div class="detail-field" style="display:flex; gap:10px;">
-                  <div style="flex:1;">
+                <div class="detail-field-row">
+                  <div class="detail-field">
                     <div class="label">SEX:</div>
                     <div class="value">${escapedGender}</div>
                   </div>
-                  <div style="flex:1;">
+                  <div class="detail-field">
                     <div class="label">BLOOD TYPE:</div>
                     <div class="value">${escapedBloodType}</div>
                   </div>
@@ -1781,11 +1818,14 @@ function PWDCard() {
 
   // Filter functions
   const handleFilterChange = (field, value) => {
-    setFilters(prev => ({ ...prev, [field]: value }));
+    setFilters(prev => ({ ...prev, [field]: value || '' }));
+    // Reset to page 1 when filter changes
+    setCurrentPage(1);
   };
 
   const clearFilters = () => {
     setSearchTerm('');
+    setDebouncedSearch('');
     setFilters({
       search: '',
       barangay: '',
@@ -1794,9 +1834,11 @@ function PWDCard() {
       status: '',
       cardStatus: ''
     });
+    // Reset to page 1 when filters are cleared
+    setCurrentPage(1);
   };
 
-  const hasActiveFilters = searchTerm !== '' || Object.values(filters).some(value => value !== '');
+  const hasActiveFilters = (searchTerm && searchTerm.trim() !== '') || Object.values(filters).some(value => value && value !== '');
 
   const handleRequestSort = (property) => {
     const isAsc = orderBy === property && order === 'asc';
@@ -1806,27 +1848,50 @@ function PWDCard() {
 
   // Filter the members based on current filters (client-side filtering for card status and age range only)
   const filteredMembers = useMemo(() => {
-    // Most filtering is done server-side, but we still need to filter by card status and age range client-side
-    const filtered = pwdMembers.filter(member => {
+    // Client-side filtering (like BarangayPresidentPWDCard)
+    let filtered = allPwdMembers.filter(member => {
+      // Search filter - search across all fields (like BarangayPresidentPWDCard)
+      const matchesSearch = !searchTerm || searchTerm.trim() === '' || 
+        Object.values(member).some(value => {
+          if (value === null || value === undefined) return false;
+          return String(value).toLowerCase().includes(searchTerm.toLowerCase());
+        });
+
+      // Barangay filter
+      const matchesBarangay = !filters.barangay || filters.barangay === '' || 
+        (member.barangay && member.barangay.toLowerCase() === filters.barangay.toLowerCase());
+
+      // Disability filter
+      const matchesDisability = !filters.disability || filters.disability === '' || 
+        (member.disabilityType && member.disabilityType.toLowerCase() === filters.disability.toLowerCase());
+
+      // Status filter
+      const matchesStatus = !filters.status || filters.status === '' || 
+        (member.status && member.status.toLowerCase() === filters.status.toLowerCase());
+
       // Card Status filter (calculated client-side)
-      const matchesCardStatus = !filters.cardStatus || 
+      const matchesCardStatus = !filters.cardStatus || filters.cardStatus === '' || 
         (member.cardStatus && member.cardStatus === filters.cardStatus);
 
       // Age range filter (calculated client-side)
       let matchesAgeRange = true;
-      if (filters.ageRange && member.age !== 'N/A') {
+      if (filters.ageRange && filters.ageRange !== '' && member.age !== 'N/A') {
         const age = parseInt(member.age);
-        if (filters.ageRange === 'Under 18') {
+        if (isNaN(age)) {
+          matchesAgeRange = true; // If age is invalid, don't filter it out
+        } else if (filters.ageRange === 'Under 18') {
           matchesAgeRange = age < 18;
         } else if (filters.ageRange === 'Over 65') {
           matchesAgeRange = age > 65;
         } else {
           const [min, max] = filters.ageRange.split('-').map(Number);
-          matchesAgeRange = age >= min && age <= max;
+          if (!isNaN(min) && !isNaN(max)) {
+            matchesAgeRange = age >= min && age <= max;
+          }
         }
       }
 
-      return matchesCardStatus && matchesAgeRange;
+      return matchesSearch && matchesBarangay && matchesDisability && matchesStatus && matchesCardStatus && matchesAgeRange;
     });
 
     // Apply sorting
@@ -1875,10 +1940,23 @@ function PWDCard() {
       });
     }
     
-    return filtered;
-  }, [pwdMembers, filters, orderBy, order]);
+    // Apply pagination to filtered results
+    const startIndex = (currentPage - 1) * perPage;
+    const endIndex = startIndex + perPage;
+    const paginated = filtered.slice(startIndex, endIndex);
+    
+    // Update pagination metadata based on filtered results
+    const total = filtered.length;
+    setPagination({
+      total,
+      last_page: Math.ceil(total / perPage),
+      has_more: endIndex < total
+    });
+    
+    return paginated;
+  }, [allPwdMembers, searchTerm, filters, orderBy, order, currentPage, perPage]);
 
-  const selectedMemberData = pwdMembers.find(member => member.id === selectedMember) || pwdMembers[0];
+  const selectedMemberData = allPwdMembers.find(member => member.id === selectedMember) || allPwdMembers[0];
 
   const memberFullName = getMemberFullName(selectedMemberData);
   const disabilityValue = selectedMemberData?.disabilityType || selectedMemberData?.typeOfDisability || '';
@@ -1957,7 +2035,7 @@ function PWDCard() {
   // Debug member selection
   console.log('=== Member Selection Debug ===');
   console.log('Selected Member ID:', selectedMember);
-  console.log('Available Members:', pwdMembers.map(m => ({ id: m.id, name: `${m.firstName} ${m.lastName}`, hasIdPictures: !!m.idPictures })));
+  console.log('Available Members:', allPwdMembers.map(m => ({ id: m.id, name: `${m.firstName} ${m.lastName}`, hasIdPictures: !!m.idPictures })));
   console.log('Selected Member Data:', selectedMemberData);
 
   // Show loading state
@@ -2016,7 +2094,7 @@ function PWDCard() {
   }
 
   // Show empty state
-  if (!loading && pwdMembers.length === 0) {
+  if (!loading && allPwdMembers.length === 0) {
     return (
       <Box sx={{ display: 'flex', minHeight: '100vh', backgroundColor: '#F8F9FA' }}>
         {currentUser?.role === 'FrontDesk' ? <FrontDeskSidebar /> : <AdminSidebar />}
@@ -2827,7 +2905,8 @@ function PWDCard() {
                       boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
                       display: 'flex',
                       flexDirection: 'column',
-                      gap: 1
+                      gap: 1,
+                      overflow: 'hidden'
                     }}
                   >
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -2868,7 +2947,7 @@ function PWDCard() {
 
                     <Box sx={{ flex: 1, display: 'flex', gap: 2 }}>
                       <Box sx={{ flex: 1 }}>
-                        <Box sx={{ mb: 1.5 }}>
+                        <Box sx={{ mb: 1.5, minWidth: 0, overflow: 'hidden' }}>
                           <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#1f2937', letterSpacing: '0.08em' }}>
                             NAME
                           </Typography>
@@ -2878,13 +2957,17 @@ function PWDCard() {
                               fontWeight: 700,
                               color: '#111827',
                               borderBottom: '1px solid #111827',
-                              pb: 0.3
+                              pb: 0.3,
+                              wordBreak: 'break-word',
+                              overflowWrap: 'break-word',
+                              lineHeight: 1.2,
+                              maxWidth: '100%'
                             }}
                           >
                             {displayName}
                           </Typography>
                         </Box>
-                        <Box sx={{ mb: 1.5 }}>
+                        <Box sx={{ mb: 1.5, minWidth: 0, overflow: 'hidden' }}>
                           <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#1f2937', letterSpacing: '0.08em' }}>
                             DISABILITY
                           </Typography>
@@ -2894,7 +2977,11 @@ function PWDCard() {
                               fontWeight: 700,
                               color: '#111827',
                               borderBottom: '1px solid #111827',
-                              pb: 0.3
+                              pb: 0.3,
+                              wordBreak: 'break-word',
+                              overflowWrap: 'break-word',
+                              lineHeight: 1.2,
+                              maxWidth: '100%'
                             }}
                           >
                             {displayDisability}
@@ -2912,7 +2999,7 @@ function PWDCard() {
                           gap: 1
                         }}
                       >
-                        <Box>
+                        <Box sx={{ minWidth: 0, overflow: 'hidden' }}>
                           <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#1f2937', letterSpacing: '0.08em' }}>
                             ID NO.
                           </Typography>
@@ -2922,7 +3009,11 @@ function PWDCard() {
                               fontWeight: 700,
                               color: '#0f172a',
                               borderBottom: '1px solid #111827',
-                              pb: 0.3
+                              pb: 0.3,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              maxWidth: '100%'
                             }}
                           >
                             {displayIdNumber}
@@ -2948,7 +3039,7 @@ function PWDCard() {
                       </Box>
                     </Box>
 
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, width: '100%' }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, width: '100%', mb: 0.5, flexShrink: 0 }}>
                       <Box
                         component="img"
                         src={flagLogoUrl}
@@ -2979,11 +3070,14 @@ function PWDCard() {
                     </Box>
                     <Typography
                       sx={{
-                        fontSize: '0.55rem',
+                        fontSize: '0.45rem',
                         fontWeight: 800,
                         textAlign: 'center',
                         color: '#111827',
-                        letterSpacing: '0.08em'
+                        letterSpacing: '0.08em',
+                        flexShrink: 0,
+                        py: 0.25,
+                        lineHeight: 1.2
                       }}
                     >
                       VALID ANYWHERE IN PHILIPPINES
@@ -3052,8 +3146,8 @@ function PWDCard() {
                           <Typography sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#9CA3AF' }}>QR CODE</Typography>
                         )}
                       </Box>
-                      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                        <Box>
+                      <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0, overflow: 'hidden' }}>
+                        <Box sx={{ minWidth: 0 }}>
                           <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#111827', letterSpacing: '0.08em' }}>
                             ADDRESS:
                           </Typography>
@@ -3063,14 +3157,18 @@ function PWDCard() {
                               fontWeight: 600,
                               color: '#111827',
                               borderBottom: '1px solid #111827',
-                              pb: 0.2
+                              pb: 0.2,
+                              wordBreak: 'break-word',
+                              overflowWrap: 'break-word',
+                              lineHeight: 1.2,
+                              maxWidth: '100%'
                             }}
                           >
                             {displayAddress}
                           </Typography>
                         </Box>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          <Box sx={{ flex: 1 }}>
+                        <Box sx={{ display: 'flex', gap: 1, minWidth: 0 }}>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
                             <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#111827', letterSpacing: '0.08em' }}>
                               DATE OF BIRTH:
                             </Typography>
@@ -3080,13 +3178,17 @@ function PWDCard() {
                                 fontWeight: 600,
                                 color: '#111827',
                                 borderBottom: '1px solid #111827',
-                                pb: 0.2
+                                pb: 0.2,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                maxWidth: '100%'
                               }}
                             >
                               {displayDob}
                             </Typography>
                           </Box>
-                          <Box sx={{ flex: 1 }}>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
                             <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#111827', letterSpacing: '0.08em' }}>
                               DATE ISSUED:
                             </Typography>
@@ -3096,15 +3198,19 @@ function PWDCard() {
                                 fontWeight: 600,
                                 color: '#111827',
                                 borderBottom: '1px solid #111827',
-                                pb: 0.2
+                                pb: 0.2,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                maxWidth: '100%'
                               }}
                             >
                               {displayDateIssued}
                             </Typography>
                           </Box>
                         </Box>
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          <Box sx={{ flex: 1 }}>
+                        <Box sx={{ display: 'flex', gap: 1, minWidth: 0 }}>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
                             <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#111827', letterSpacing: '0.08em' }}>
                               SEX:
                             </Typography>
@@ -3114,13 +3220,17 @@ function PWDCard() {
                                 fontWeight: 600,
                                 color: '#111827',
                                 borderBottom: '1px solid #111827',
-                                pb: 0.2
+                                pb: 0.2,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                maxWidth: '100%'
                               }}
                             >
                               {displayGender}
                             </Typography>
                           </Box>
-                          <Box sx={{ flex: 1 }}>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
                             <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#111827', letterSpacing: '0.08em' }}>
                               BLOOD TYPE:
                             </Typography>
@@ -3130,14 +3240,18 @@ function PWDCard() {
                                 fontWeight: 600,
                                 color: '#111827',
                                 borderBottom: '1px solid #111827',
-                                pb: 0.2
+                                pb: 0.2,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                maxWidth: '100%'
                               }}
                             >
                               {displayBloodType}
                             </Typography>
                           </Box>
                         </Box>
-                        <Box>
+                        <Box sx={{ minWidth: 0 }}>
                           <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#111827', letterSpacing: '0.08em' }}>
                             CONTACT NO:
                           </Typography>
@@ -3147,13 +3261,17 @@ function PWDCard() {
                               fontWeight: 600,
                               color: '#111827',
                               borderBottom: '1px solid #111827',
-                              pb: 0.2
+                              pb: 0.2,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              maxWidth: '100%'
                             }}
                           >
                             {displayContact}
                           </Typography>
                         </Box>
-                        <Box>
+                        <Box sx={{ minWidth: 0 }}>
                           <Typography sx={{ fontSize: '0.55rem', fontWeight: 700, color: '#111827', letterSpacing: '0.08em' }}>
                             GUARDIAN NAME:
                           </Typography>
@@ -3163,7 +3281,11 @@ function PWDCard() {
                               fontWeight: 600,
                               color: '#111827',
                               borderBottom: '1px solid #111827',
-                              pb: 0.2
+                              pb: 0.2,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              maxWidth: '100%'
                             }}
                           >
                             {displayGuardian}
@@ -3174,184 +3296,6 @@ function PWDCard() {
                   </Box>
                 </Box>
               </Box>
-
-              {/* PWD Information Section */}
-              <Card elevation={0} sx={{ backgroundColor: 'transparent' }}>
-                <CardContent sx={{ p: 0 }}>
-                  <Box sx={{ 
-                    background: '#FFFFFF',
-                    borderRadius: 2,
-                    border: '2px solid #E0E0E0',
-                    p: 1.5,
-                    width: '100%',
-                    aspectRatio: '85.6 / 54',
-                    boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    overflow: 'hidden'
-                  }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, flexShrink: 0 }}>
-                      <Box sx={{ 
-                        position: 'relative',
-                        mr: 2
-                      }}>
-                        <Avatar sx={{ 
-                          width: 28, 
-                          height: 28, 
-                          backgroundColor: '#0b87ac',
-                          border: '2px solid white',
-                          boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
-                        }}>
-                          <PersonIcon />
-                        </Avatar>
-                        <Box sx={{
-                          position: 'absolute',
-                          bottom: -1,
-                          right: -1,
-                          width: 12,
-                          height: 12,
-                          backgroundColor: '#27AE60',
-                          borderRadius: '50%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          border: '2px solid white'
-                        }}>
-                          <EditIcon sx={{ fontSize: 7, color: 'white' }} />
-                        </Box>
-                      </Box>
-                      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: '#FFFFFF' }}>
-                        PWD Information
-                      </Typography>
-                    </Box>
-                  
-                  {selectedMemberData ? (
-                    <Box sx={{ 
-                      display: 'flex', 
-                      flexDirection: 'column', 
-                      gap: 1, 
-                      flex: 1,
-                      overflow: 'auto',
-                      pr: 0.5, // Add padding for scrollbar
-                      '&::-webkit-scrollbar': {
-                        width: '6px',
-                      },
-                      '&::-webkit-scrollbar-track': {
-                        background: '#f1f1f1',
-                        borderRadius: '3px',
-                      },
-                      '&::-webkit-scrollbar-thumb': {
-                        background: '#c1c1c1',
-                        borderRadius: '3px',
-                      },
-                      '&::-webkit-scrollbar-thumb:hover': {
-                        background: '#a8a8a8',
-                      }
-                    }}>
-                      <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#FFFFFF', mb: 0.5, fontSize: '12px' }}>
-                          Name:
-                        </Typography>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                          <Typography variant="body2" sx={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 'bold' }}>
-                            {selectedMemberData.lastName || ''},
-                          </Typography>
-                          <Typography variant="body2" sx={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 'bold' }}>
-                            {selectedMemberData.firstName || ''},
-                          </Typography>
-                          {selectedMemberData.middleName && selectedMemberData.middleName.trim().toUpperCase() !== 'N/A' && (
-                            <Typography variant="body2" sx={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 'bold' }}>
-                              {selectedMemberData.middleName},
-                            </Typography>
-                          )}
-                          <Typography variant="body2" sx={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 'bold' }}>
-                            {selectedMemberData.suffix || ''}
-                          </Typography>
-                        </Box>
-                      </Box>
-                      
-                      <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#FFFFFF', mb: 0.5, fontSize: '12px' }}>
-                          Address:
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: '#FFFFFF', fontSize: '14px' }}>
-                          {(() => {
-                            const addressParts = [];
-                            
-                            // Add complete address if available
-                            if (selectedMemberData.address) {
-                              addressParts.push(selectedMemberData.address);
-                            }
-                            
-                            // Add barangay if available
-                            if (selectedMemberData.barangay && selectedMemberData.barangay !== 'N/A') {
-                              addressParts.push(selectedMemberData.barangay);
-                            }
-                            
-                            // Add city (default to Cabuyao if not specified)
-                            const city = selectedMemberData.city && selectedMemberData.city !== 'N/A' 
-                              ? selectedMemberData.city 
-                              : 'Cabuyao';
-                            addressParts.push(city);
-                            
-                            // Add province (default to Laguna if not specified)
-                            const province = selectedMemberData.province && selectedMemberData.province !== 'N/A' 
-                              ? selectedMemberData.province 
-                              : 'Laguna';
-                            addressParts.push(province);
-                            
-                            // Join all parts with commas and return
-                            return addressParts.length > 0 ? addressParts.join(', ') : 'No address provided';
-                          })()}
-                        </Typography>
-                      </Box>
-                      
-                      <Box sx={{ display: 'flex', gap: 3 }}>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#FFFFFF', mb: 0.5, fontSize: '12px' }}>
-                            Contact #:
-                          </Typography>
-                          <Typography variant="body2" sx={{ color: '#FFFFFF', fontSize: '14px' }}>
-                            {selectedMemberData.contactNumber || '+63 987 654 3210'}
-                          </Typography>
-                        </Box>
-                        
-                        <Box sx={{ flex: 1 }}>
-                          <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#FFFFFF', mb: 0.5, fontSize: '12px' }}>
-                            Sex:
-                          </Typography>
-                          <Typography variant="body2" sx={{ color: '#FFFFFF', fontSize: '14px' }}>
-                            {selectedMemberData.gender || 'Male'}
-                          </Typography>
-                        </Box>
-                        
-                        <Box sx={{ flex: 1 }}>
-                          <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#FFFFFF', mb: 0.5, fontSize: '12px' }}>
-                            Blood Type:
-                          </Typography>
-                          <Typography variant="body2" sx={{ color: '#FFFFFF', fontSize: '14px' }}>
-                            {selectedMemberData.bloodType || 'O+'}
-                          </Typography>
-                        </Box>
-                      </Box>
-                    </Box>
-                  ) : (
-                    <Box sx={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center',
-                      py: 4,
-                      flexDirection: 'column'
-                    }}>
-                      <PersonIcon sx={{ fontSize: 48, color: '#FFFFFF', mb: 1 }} />
-                      <Typography variant="body2" sx={{ color: '#FFFFFF', textAlign: 'center' }}>
-                        Select a PWD member to view information
-                      </Typography>
-                    </Box>
-                  )}
-                  </Box>
-                </CardContent>
-              </Card>
 
             </Grid>
           </Grid>

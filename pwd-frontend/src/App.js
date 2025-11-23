@@ -60,6 +60,7 @@ import DocumentCorrectionPage from './components/application/DocumentCorrectionP
 import DocumentManagement from './components/documents/DocumentManagement';
 import AuditLogs from './components/audit/AuditLogs';
 import SecurityMonitoring from './components/security/SecurityMonitoring';
+import ArchivedMembers from './components/records/ArchivedMembers';
 
 const theme = createTheme({
   palette: {
@@ -167,6 +168,14 @@ function AppContent() {
         element={
           <ProtectedRoute allowedRoles={['SuperAdmin']}>
             <SecurityMonitoring />
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/archived-members" 
+        element={
+          <ProtectedRoute allowedRoles={['SuperAdmin', 'Staff1']}>
+            <ArchivedMembers />
           </ProtectedRoute>
         } 
       />

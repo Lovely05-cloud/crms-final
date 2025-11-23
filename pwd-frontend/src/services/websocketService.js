@@ -1,5 +1,5 @@
 // WebSocket service for real-time messaging
-import { API_CONFIG } from '../config/production';
+import { API_CONFIG, FALLBACK_CONFIG } from '../config/production';
 
 class WebSocketService {
   constructor() {
@@ -12,10 +12,61 @@ class WebSocketService {
     this.connectionStatus = 'disconnected';
   }
 
-  // Get WebSocket URL based on environment
+  // Get WebSocket URL based on environment with fallback support
   getWebSocketUrl() {
-    const baseUrl = API_CONFIG.API_BASE_URL.replace('/api', '');
-    return baseUrl.replace('http', 'ws') + '/ws';
+    // Check if WebSocket URL is set in environment/localStorage (for Cloudflare tunnel)
+    const customWsUrl = localStorage.getItem('websocket.url');
+    if (customWsUrl) {
+      return customWsUrl;
+    }
+
+    // Check if we're using fallback (from sessionStorage)
+    const usingFallback = sessionStorage.getItem('api.usingFallback') === 'true';
+    const config = usingFallback ? FALLBACK_CONFIG : API_CONFIG;
+
+    // Extract base URL from API config
+    let baseUrl = config.API_BASE_URL.replace('/api', '');
+    
+    // Check if it's a Cloudflare tunnel (trycloudflare.com)
+    const isCloudflareTunnel = baseUrl.includes('trycloudflare.com');
+    
+    // For HTTPS, use WSS; for HTTP, use WS
+    if (baseUrl.startsWith('https://')) {
+      // For Cloudflare tunnels, don't add port number (tunnels handle it)
+      if (isCloudflareTunnel) {
+        try {
+          const url = new URL(baseUrl);
+          // Cloudflare tunnels don't use port numbers in URL
+          // User must set websocket.url in localStorage with the WebSocket tunnel URL
+          console.warn('Cloudflare tunnel detected. Please set websocket.url in localStorage.');
+          console.warn('Run: localStorage.setItem("websocket.url", "wss://your-websocket-tunnel-url.trycloudflare.com")');
+          // Return a placeholder that will fail gracefully
+          return `wss://${url.hostname}`;
+        } catch (e) {
+          return baseUrl.replace('https://', 'wss://').replace(/\/$/, '');
+        }
+      } else {
+        // For regular HTTPS (not Cloudflare), use port 8080
+        try {
+          const url = new URL(baseUrl);
+          return `wss://${url.hostname}:8080`;
+        } catch (e) {
+          return baseUrl.replace('https://', 'wss://').replace(/\/$/, '') + ':8080';
+        }
+      }
+    } else if (baseUrl.startsWith('http://')) {
+      // For development/HTTP, WebSocket server runs on port 8080
+      try {
+        const url = new URL(baseUrl);
+        return `ws://${url.hostname}:8080`;
+      } catch (e) {
+        // Fallback if URL parsing fails
+        return baseUrl.replace('http://', 'ws://').replace(/\/$/, '') + ':8080';
+      }
+    } else {
+      // Fallback
+      return baseUrl.replace('http', 'ws').replace('https', 'wss') + ':8080';
+    }
   }
 
   // Get authentication token
@@ -31,6 +82,9 @@ class WebSocketService {
 
   // Connect to WebSocket
   async connect() {
+    // Disabled - return early to prevent connection attempts
+    return;
+    
     if (this.isConnecting || (this.socket && this.socket.readyState === WebSocket.OPEN)) {
       return;
     }
@@ -39,18 +93,21 @@ class WebSocketService {
     this.connectionStatus = 'connecting';
 
     try {
-      const token = await this.getAuthToken();
-      if (!token) {
+      const tokenData = await this.getAuthToken();
+      if (!tokenData) {
         throw new Error('No authentication token found');
       }
 
-      const wsUrl = `${this.getWebSocketUrl()}?token=${token}`;
-      console.log('Attempting to connect to WebSocket:', wsUrl);
+      // Extract token string if it's an object
+      const token = typeof tokenData === 'string' ? tokenData : (tokenData.token || tokenData);
+      
+      const wsUrl = `${this.getWebSocketUrl()}?token=${encodeURIComponent(token)}`;
+      // Silent connection attempt - no console logs
 
       this.socket = new WebSocket(wsUrl);
 
       this.socket.onopen = () => {
-        console.log('WebSocket connected successfully');
+        // Silent connection - no console logs
         this.connectionStatus = 'connected';
         this.reconnectAttempts = 0;
         this.isConnecting = false;
@@ -60,54 +117,50 @@ class WebSocketService {
       this.socket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log('WebSocket message received:', data);
+          // Silent message handling - no console logs
           this.handleMessage(data);
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
+          // Silent error - no console logs
         }
       };
 
       this.socket.onclose = (event) => {
-        console.log('WebSocket disconnected:', event.code, event.reason);
+        // Silent disconnect - no console logs
         this.connectionStatus = 'disconnected';
         this.isConnecting = false;
         this.emit('connection', { status: 'disconnected', code: event.code, reason: event.reason });
         
-        // Only attempt to reconnect if not manually closed and server exists
-        if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
-          this.scheduleReconnect();
-        }
+        // Disable auto-reconnect
+        // if (event.code !== 1000 && this.reconnectAttempts < this.maxReconnectAttempts) {
+        //   this.scheduleReconnect();
+        // }
       };
 
       this.socket.onerror = (error) => {
-        console.warn('WebSocket connection failed - backend WebSocket server not available');
-        console.log('This is expected if the backend doesn\'t support WebSocket yet');
+        // Silently fail - no console warnings
         this.connectionStatus = 'disconnected';
         this.isConnecting = false;
         this.emit('connection', { status: 'disconnected', error: 'WebSocket server not available' });
       };
 
     } catch (error) {
-      console.warn('WebSocket initialization failed:', error.message);
-      console.log('Falling back to regular API mode');
+      // Silent failure - no console warnings
       this.connectionStatus = 'disconnected';
       this.isConnecting = false;
       this.emit('connection', { status: 'disconnected', error: error.message });
     }
   }
 
-  // Schedule reconnection attempt
+  // Schedule reconnection attempt - DISABLED
   scheduleReconnect() {
-    this.reconnectAttempts++;
-    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
-    
-    console.log(`Scheduling reconnect attempt ${this.reconnectAttempts} in ${delay}ms`);
-    
-    setTimeout(() => {
-      if (this.connectionStatus === 'disconnected') {
-        this.connect();
-      }
-    }, delay);
+    // Auto-reconnect disabled
+    // this.reconnectAttempts++;
+    // const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+    // setTimeout(() => {
+    //   if (this.connectionStatus === 'disconnected') {
+    //     this.connect();
+    //   }
+    // }, delay);
   }
 
   // Handle incoming messages
@@ -134,7 +187,8 @@ class WebSocketService {
         this.emit('user_offline', payload);
         break;
       default:
-        console.log('Unknown message type:', type);
+        // Silent - unknown message type
+        break;
     }
   }
 
@@ -150,7 +204,7 @@ class WebSocketService {
       this.socket.send(JSON.stringify(message));
       return true;
     } else {
-      console.warn('WebSocket not connected, cannot send message');
+      // Silent - WebSocket not connected
       return false;
     }
   }
